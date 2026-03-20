@@ -93,7 +93,7 @@ async def on_message(message):
         await message.reply(EMPTY_PROMPT_REPLY)
         return
 
-    async with message.channel.typing(): # 「入力中...」を表示
+    async with message.channel.typing():
         try:
             # 文脈構築
             messages_payload = [
