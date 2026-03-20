@@ -137,7 +137,7 @@ async def on_message(message):
             
             reply_text = response.choices[0].message.content
             
-            # Discordの文字数制限を超える場合は分割送信
+            # 文字数制限を超える場合は分割送信
             if len(reply_text) > 2000:
                 target_message = message
                 for i in range(0, len(reply_text), 2000):
