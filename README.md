@@ -1,3 +1,5 @@
+テキトーに説明
+
 # Simple discord AI chat bot "Madoka"
 
 Madokaは、Discord上で動作するシンプルなAIチャットボットです。
