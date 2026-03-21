@@ -1,5 +1,7 @@
 import time
+import asyncio
 import discord
+from datetime import datetime
 from openai import AsyncOpenAI
 
 # トークン設定
@@ -25,13 +27,14 @@ SYSTEM_PROMPT = """システム設定 (System)
 補足：全てのキャラクターのセリフは「」の中に
 キャラクターの気持ちの描写は詳細に
 
-翻訳機能設定 (Translation)
+翻訳機能 (Translation)
 ユーザープロンプトは .jp のような言語コードから始まる場合は、ただそのメッセージを指定された言語コードに翻訳するだけ
 """
 
 # プロンプトなしの場合の返信
-EMPTY_PROMPT_REPLY = """About Madoka
-Version:v1.0.2-202603P02
+EMPTY_PROMPT_REPLY = f"""About Madoka
+Version:v1.0.3-202603P03
+Model:{MODEL_NAME}
 By hinata983
 https://github.com/Hinata983/Madoka
 """
@@ -39,6 +42,10 @@ https://github.com/Hinata983/Madoka
 # クールダウン設定
 user_cooldowns = {}
 COOLDOWN_SECONDS = 10
+
+# 統計用変数
+request_count = 0
+total_tokens = 0
 
 # 非同期版のOpenAIクライアントの初期化
 ai_client = AsyncOpenAI(
@@ -53,7 +60,7 @@ discord_client = discord.Client(intents=intents)
 
 @discord_client.event
 async def on_ready():
-    print(f'{discord_client.user} がログインしました。')
+    print(f'{discord_client.user} logged in.')
 
 @discord_client.event
 async def on_message(message):
@@ -109,7 +116,6 @@ async def on_message(message):
                 try:
                     ref_msg = current_msg.reference.cached_message or await message.channel.fetch_message(current_msg.reference.message_id)
                     
-                    # 発言者がボットならassistant、ユーザーならuser
                     role = "assistant" if ref_msg.author == discord_client.user else "user"
                     clean_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
                     
@@ -135,9 +141,15 @@ async def on_message(message):
                 temperature=0.9,
             )
             
+            # 統計カウント
+            global request_count, total_tokens
+            used_tokens = response.usage.total_tokens if response.usage else 0
+            request_count += 1
+            total_tokens += used_tokens
+            
             reply_text = response.choices[0].message.content
             
-            # 文字数制限を超える場合は分割送信
+            # 分割送信
             if len(reply_text) > 2000:
                 target_message = message
                 for i in range(0, len(reply_text), 2000):
@@ -147,5 +159,25 @@ async def on_message(message):
                 
         except Exception as e:
             await message.reply(f"エラーが発生しました (e017): {e}")
+
+# 統計表示タスク
+async def print_stats_loop():
+    await discord_client.wait_until_ready()
+    while not discord_client.is_closed():
+        await asyncio.sleep(600)
+        
+        global request_count, total_tokens
+        
+        current_reqs = request_count
+        current_tokens = total_tokens
+        request_count = 0
+        total_tokens = 0
+        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{now}] Requests: {current_reqs}, Tokens used: {current_tokens}")
+
+@discord_client.event
+async def setup_hook():
+    discord_client.loop.create_task(print_stats_loop())
 
 discord_client.run(DISCORD_TOKEN)
