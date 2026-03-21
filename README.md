@@ -1,4 +1,4 @@
-テキトーに説明
+テキトーな説明を作った
 
 # Simple discord AI chat bot "Madoka"
 
