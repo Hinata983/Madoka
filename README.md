@@ -10,11 +10,13 @@ Python 3.8 以上
 リポジトリのクローン
 ```bash
 git clone https://github.com/Hinata983/Madoka.git
-cd Madoka```
+cd Madoka
+```
 
 必要パッケージをインストール
 ```bash
-pip install discord openai```
+pip install discord openai
+```
 
 # 初期設定
 ソースコード内の以下の変数を、ご自身の環境に合わせて書き換えてください。
@@ -26,4 +28,5 @@ MODEL_NAME:使用するモデル
 
 # Botの起動
 ```bash
-python main.py```
+python main.py
+```
