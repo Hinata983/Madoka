@@ -23,7 +23,6 @@ Python 3.13
 リポジトリをクローン
 ```bash
 git clone https://github.com/Hinata983/Madoka.git
-cd Madoka
 ```
 
 
