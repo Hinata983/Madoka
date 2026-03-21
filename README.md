@@ -16,7 +16,7 @@ cd Madoka
 
 必要パッケージのインストール
 ```bash
-pip install discord openai
+pip install discord.py openai
 ```
 
 # 初期設定
