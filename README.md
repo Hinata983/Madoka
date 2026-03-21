@@ -10,14 +10,14 @@ Python 3.8 以上
 
 
 # インストール
-リポジトリのクローン
+リポジトリをクローン
 ```bash
 git clone https://github.com/Hinata983/Madoka.git
 cd Madoka
 ```
 
 
-必要パッケージのインストール
+必要パッケージをインストール
 ```bash
 pip install discord.py openai
 ```
