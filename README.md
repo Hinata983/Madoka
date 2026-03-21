@@ -1,7 +1,8 @@
 # Madoka
 Simple discord AI chat bot "Madoka"
 
-Madokaは、Discord上で動作するAIチャットボットです。OpenAI互換APIを利用し、ユーザーとの自然な対話や、リプライツリーを遡った文脈の理解が可能です。
+Madokaは、Discord上で動作するシンプルなAIチャットボットです。
+OpenAI互換APIを利用し、ユーザーとの自然な対話や、リプライツリーを遡った文脈の理解が可能です。
 
 # 必須環境
 Python 3.8 以上
@@ -13,7 +14,7 @@ git clone https://github.com/Hinata983/Madoka.git
 cd Madoka
 ```
 
-必要パッケージをインストール
+必要パッケージのインストール
 ```bash
 pip install discord openai
 ```
@@ -30,3 +31,6 @@ MODEL_NAME:使用するモデル
 ```bash
 python main.py
 ```
+
+# ライセンス
+このプロジェクトは MIT License のもとで公開されています。
