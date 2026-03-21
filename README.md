@@ -36,7 +36,7 @@ API_KEY:APIキー
 MODEL_NAME:使用するモデル
 
 
-# Botの起動
+# Botを起動
 ```bash
 python main.py
 ```
