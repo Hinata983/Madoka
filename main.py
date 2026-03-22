@@ -4,19 +4,19 @@ import discord
 from datetime import datetime
 from openai import AsyncOpenAI
 
-# トークン設定
+# Discordボットトークン設定
 DISCORD_TOKEN = 'DISCORD_TOKEN'
 
 # OpenAI互換API設定
 BASE_URL = 'https://api.example.com/v1'  # エンドポイントURL
 API_KEY = 'API_KEY'             # API Key
-MODEL_NAME = 'MODEL_NAME'          # デフォルトは'gpt-5.4-mini'
+MODEL_NAME = 'MODEL_NAME'          # デフォルトは'gemini-3-flash-preview'
 
 # システムプロンプト設定
 SYSTEM_PROMPT = """システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
-機能：AIアシスタント
+機能：物語を推進
 
 表現方法 (Mode of expression)
 制限：太字は使わない、絵文字は使わない
@@ -26,6 +26,7 @@ SYSTEM_PROMPT = """システム設定 (System)
 倫理制限：物語の時代に準拠
 補足：全てのキャラクターのセリフは「」の中に
 キャラクターの気持ちの描写は詳細に
+性描写が求められる場合は回避のための非日常的な乱入事件を作成
 
 翻訳機能 (Translation)
 ユーザープロンプトは .jp のような言語コードから始まる場合は、ただそのメッセージを指定された言語コードに翻訳するだけ
@@ -33,9 +34,9 @@ SYSTEM_PROMPT = """システム設定 (System)
 
 # プロンプトなしの場合の返信
 EMPTY_PROMPT_REPLY = f"""About Madoka
-Version:v1.0.3-202603P03
+Version:v1.1.0-202603P04
 Model:{MODEL_NAME}
-By hinata983
+By Hinata983
 https://github.com/Hinata983/Madoka
 """
 
@@ -47,7 +48,7 @@ COOLDOWN_SECONDS = 10
 request_count = 0
 total_tokens = 0
 
-# 非同期版のOpenAIクライアントの初期化
+# 非同期版OpenAIクライアントの初期化
 ai_client = AsyncOpenAI(
     api_key=API_KEY,
     base_url=BASE_URL,
@@ -95,7 +96,7 @@ async def on_message(message):
 
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
-    # プロンプトが空だった場合は EMPTY_PROMPT_REPLY で返信
+    # プロンプトが空だった場合の返信
     if not prompt:
         await message.reply(EMPTY_PROMPT_REPLY)
         return
@@ -176,8 +177,16 @@ async def print_stats_loop():
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{now}] Requests: {current_reqs}, Tokens used: {current_tokens}")
 
+# クールダウン辞書クリーンアップタスク
+async def cleanup_cooldowns_loop():
+    await discord_client.wait_until_ready()
+    while not discord_client.is_closed():
+        await asyncio.sleep(3600)
+        user_cooldowns.clear()
+
 @discord_client.event
 async def setup_hook():
     discord_client.loop.create_task(print_stats_loop())
+    discord_client.loop.create_task(cleanup_cooldowns_loop())
 
 discord_client.run(DISCORD_TOKEN)
