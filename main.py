@@ -1,18 +1,31 @@
 import time
 import asyncio
 import discord
+import re
 from datetime import datetime
 from openai import AsyncOpenAI
 
 # Discordボットトークン設定
-DISCORD_TOKEN = 'DISCORD_TOKEN'
+DISCORD_TOKEN    = 'YOUR_DISCORD_TOKEN'
 
 # OpenAI互換API設定
-BASE_URL = 'https://api.example.com/v1'  # エンドポイントURL
-API_KEY = 'API_KEY'             # API Key
-MODEL_NAME = 'MODEL_NAME'          # デフォルトは'gemini-3-flash-preview'
+API_KEY    = 'YOUR_API_KEY'
+BASE_URL    = 'https://api.example.com/v1'
+MODEL_NAME    = 'gemini-3-flash-preview'
 
-# システムプロンプト設定
+# 動作設定
+COOLDOWN_SECONDS    = 10    # ユーザーごとの連続送信制限秒数
+HISTORY_LIMIT_TALK    = 6    # トークモード時の会話履歴数
+HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
+MAX_TOKENS                = 4096    # APIの最大出力トークン数
+TEMPERATURE                = 0.9    # APIの回答の温度
+
+# 基本情報
+BOT_VERSION    = 'v1.3.1-202603P08'
+AUTHOR_NAME    = 'Hinata983'
+GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
+
+# システムプロンプト設定（トークモード）
 SYSTEM_PROMPT = """システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
@@ -27,31 +40,44 @@ SYSTEM_PROMPT = """システム設定 (System)
 補足：全てのキャラクターのセリフは「」の中に
 キャラクターの気持ちの描写は詳細に
 性描写が求められる場合は回避のための非日常的な乱入事件を作成
+"""
 
-翻訳機能 (Translation)
-ユーザープロンプトは .jp のような言語コードから始まる場合は、ただそのメッセージを指定された言語コードに翻訳するだけ
+# システムプロンプト設定（翻訳モード）
+TRANSLATION_SYSTEM_PROMPT = """システム設定 (System)
+機能：翻訳
+ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
 """
 
 # プロンプトなしの場合の返信
 EMPTY_PROMPT_REPLY = f"""About Madoka
-Version:v1.1.0-202603P04
-Model:{MODEL_NAME}
-By Hinata983
-https://github.com/Hinata983/Madoka
+Version: {BOT_VERSION}
+Model: {MODEL_NAME}
 """
 
-# クールダウン設定
-user_cooldowns = {}
-COOLDOWN_SECONDS = 10
+# デバッグ用メッセージ
+DEBUG_MESSAGE_REPLY = f"""About Madoka
+Version: {BOT_VERSION}
+Model: {MODEL_NAME}
 
-# 統計用変数
+Cooldown: {COOLDOWN_SECONDS}
+History Limit (Talk): {HISTORY_LIMIT_TALK}
+History Limit (Trans): {HISTORY_LIMIT_TRANS}
+Max Tokens: {MAX_TOKENS}
+Temperature: {TEMPERATURE}
+
+By {AUTHOR_NAME}
+{GITHUB_URL}
+"""
+
+# 状態管理用変数
+user_cooldowns = {}
 request_count = 0
 total_tokens = 0
 
 # 非同期版OpenAIクライアントの初期化
 ai_client = AsyncOpenAI(
-    api_key=API_KEY,
-    base_url=BASE_URL,
+    api_key = API_KEY,
+    base_url = BASE_URL,
 )
 
 # Discordボットの設定
@@ -96,23 +122,47 @@ async def on_message(message):
 
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
-    # プロンプトが空だった場合の返信
+    # プロンプトなしの場合の返信
     if not prompt:
-        await message.reply(EMPTY_PROMPT_REPLY)
+        await message.reply(EMPTY_PROMPT_REPLY, delete_after=10.0)
         return
 
+    # モード判定
+    current_mode = "TALK"
+    
+    if re.match(r'^\.[0-9]+', prompt):
+        current_mode = "DEBUG"
+    elif re.match(r'^\.[a-zA-Z]+', prompt):
+        current_mode = "TRANSLATION"
+
+    # デバッグモード処理
+    if current_mode == "DEBUG":
+        await message.reply(DEBUG_MESSAGE_REPLY)
+        return
+
+    # リクエスト処理
     async with message.channel.typing():
         try:
-            # 文脈構築
+            # トークモード
+            if current_mode == "TALK":
+                system_content = SYSTEM_PROMPT
+                history_limit = HISTORY_LIMIT_TALK
+                
+            # 翻訳モード
+            elif current_mode == "TRANSLATION":
+                system_content = TRANSLATION_SYSTEM_PROMPT
+                history_limit = HISTORY_LIMIT_TRANS
+
+            # ペイロード初期化
             messages_payload = [
-                {"role": "system", "content": SYSTEM_PROMPT}
+                {"role": "system", "content": system_content}
             ]
             
             history = []
             current_msg = message
+            limit = history_limit
             
-            # 返信を遡る最大件数
-            limit = 6
+            # 文脈構築
             while current_msg.reference and current_msg.reference.message_id and limit > 0:
                 try:
                     ref_msg = current_msg.reference.cached_message or await message.channel.fetch_message(current_msg.reference.message_id)
@@ -136,10 +186,10 @@ async def on_message(message):
 
             # リクエスト送信
             response = await ai_client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages_payload,
-                max_tokens=4096,
-                temperature=0.9,
+                model = MODEL_NAME,
+                messages = messages_payload,
+                max_tokens = MAX_TOKENS,
+                temperature = TEMPERATURE,
             )
             
             # 統計カウント
@@ -189,4 +239,5 @@ async def setup_hook():
     discord_client.loop.create_task(print_stats_loop())
     discord_client.loop.create_task(cleanup_cooldowns_loop())
 
-discord_client.run(DISCORD_TOKEN)
+if __name__ == "__main__":
+    discord_client.run(DISCORD_TOKEN)
