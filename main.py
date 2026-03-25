@@ -20,16 +20,21 @@ HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
 MAX_TOKENS                = 4096    # APIの最大出力トークン数
 TEMPERATURE                = 0.9    # APIの回答の温度
 
+# 出力文字上限期待値
+OUTPUT_LENGTH_TALK  = int(MAX_TOKENS * 0.30)
+OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.50)
+
 # 基本情報
-BOT_VERSION    = 'v1.3.1-202603P08'
+BOT_VERSION    = 'v1.5.2-202603P17'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
 
 # システムプロンプト設定（トークモード）
-SYSTEM_PROMPT = """システム設定 (System)
+SYSTEM_PROMPT = f"""システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
 機能：物語を推進
+出力文字上限：{OUTPUT_LENGTH_TALK}
 
 表現方法 (Mode of expression)
 制限：太字は使わない、絵文字は使わない
@@ -43,12 +48,19 @@ SYSTEM_PROMPT = """システム設定 (System)
 """
 
 # システムプロンプト設定（翻訳モード）
-TRANSLATION_SYSTEM_PROMPT = """システム設定 (System)
+TRANSLATE_SYSTEM_PROMPT = f"""システム設定 (System)
 機能：翻訳
-ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
+出力文字上限：{OUTPUT_LENGTH_TRANS}
+ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
 """
 
-# プロンプトなしの場合の返信
+# システムプロンプト設定（拡張翻訳モード）
+TRANSLATE_EXT_SYSTEM_PROMPT = """システム設定 (System)
+機能：翻訳
+ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に全文翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
+"""
+
+# 空メッセージへの返信
 EMPTY_PROMPT_REPLY = f"""About Madoka
 Version: {BOT_VERSION}
 Model: {MODEL_NAME}
@@ -62,6 +74,8 @@ Model: {MODEL_NAME}
 Cooldown: {COOLDOWN_SECONDS}
 History Limit (Talk): {HISTORY_LIMIT_TALK}
 History Limit (Trans): {HISTORY_LIMIT_TRANS}
+Output Length (Talk): {OUTPUT_LENGTH_TALK}
+Output Length (Trans): {OUTPUT_LENGTH_TRANS}
 Max Tokens: {MAX_TOKENS}
 Temperature: {TEMPERATURE}
 
@@ -120,20 +134,35 @@ async def on_message(message):
             
     user_cooldowns[user_id] = current_time
 
+    # 画像取得
+    def get_first_image_url(msg):
+        for attachment in msg.attachments:
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                return attachment.url
+        return None
+
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
-    # プロンプトなしの場合の返信
-    if not prompt:
+    # 現在メッセージの画像取得
+    target_image_url = get_first_image_url(message)
+    
+    # 空メッセージ判定
+    if (not prompt or prompt == "." or prompt == "..") and not target_image_url:
         await message.reply(EMPTY_PROMPT_REPLY, delete_after=10.0)
         return
 
     # モード判定
     current_mode = "TALK"
     
-    if re.match(r'^\.[0-9]+', prompt):
-        current_mode = "DEBUG"
-    elif re.match(r'^\.[a-zA-Z]+', prompt):
-        current_mode = "TRANSLATION"
+    if prompt:
+        if re.match(r'^\.\.debug', prompt):
+            current_mode = "DEBUG"
+        elif re.match(r'^\.(?!\.)', prompt):
+            current_mode = "TRANSLATE"
+        elif re.match(r'^\.\.', prompt):
+            current_mode = "TRANSLATE_EXT"
+    else:
+        current_mode = "TALK"
 
     # デバッグモード処理
     if current_mode == "DEBUG":
@@ -149,8 +178,13 @@ async def on_message(message):
                 history_limit = HISTORY_LIMIT_TALK
                 
             # 翻訳モード
-            elif current_mode == "TRANSLATION":
-                system_content = TRANSLATION_SYSTEM_PROMPT
+            elif current_mode == "TRANSLATE":
+                system_content = TRANSLATE_SYSTEM_PROMPT
+                history_limit = HISTORY_LIMIT_TRANS
+                
+            # 拡張翻訳モード
+            elif current_mode == "TRANSLATE_EXT":
+                system_content = TRANSLATE_EXT_SYSTEM_PROMPT
                 history_limit = HISTORY_LIMIT_TRANS
 
             # ペイロード初期化
@@ -161,6 +195,7 @@ async def on_message(message):
             history = []
             current_msg = message
             limit = history_limit
+            image_found = target_image_url is not None
             
             # 文脈構築
             while current_msg.reference and current_msg.reference.message_id and limit > 0:
@@ -170,19 +205,41 @@ async def on_message(message):
                     role = "assistant" if ref_msg.author == discord_client.user else "user"
                     clean_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
                     
-                    if clean_content:
-                        history.append({"role": role, "content": clean_content})
+                    hist_image_url = None
+                    if not image_found:
+                        hist_image_url = get_first_image_url(ref_msg)
+                        if hist_image_url:
+                            image_found = True
+                    
+                    if clean_content or hist_image_url:
+                        history.append({
+                            "role": role, 
+                            "content": clean_content,
+                            "image_url": hist_image_url
+                        })
                         
                     current_msg = ref_msg
                     limit -= 1
-                except Exception as e:
-                    print(f"履歴取得エラー (e016): {e}")
+                except Exception:
+                    print("履歴取得エラー (e016)")
                     break
             
+            # 履歴処理
             for h in reversed(history):
-                messages_payload.append(h)
+                if not h.get("image_url"):
+                    messages_payload.append({"role": h["role"], "content": h["content"]})
+                else:
+                    content_list = [{"type": "text", "text": h["content"] if h["content"] else " "}]
+                    content_list.append({"type": "image_url", "image_url": {"url": h["image_url"]}})
+                    messages_payload.append({"role": h["role"], "content": content_list})
                 
-            messages_payload.append({"role": "user", "content": prompt})
+            # メッセージ処理
+            if not target_image_url:
+                messages_payload.append({"role": "user", "content": prompt})
+            else:
+                content_list = [{"type": "text", "text": prompt if prompt else " "}]
+                content_list.append({"type": "image_url", "image_url": {"url": target_image_url}})
+                messages_payload.append({"role": "user", "content": content_list})
 
             # リクエスト送信
             response = await ai_client.chat.completions.create(
@@ -208,8 +265,8 @@ async def on_message(message):
             else:
                 await message.reply(reply_text)
                 
-        except Exception as e:
-            await message.reply(f"エラーが発生しました (e017): {e}")
+        except Exception:
+            await message.reply("リクエストエラー (e017)")
 
 # 統計表示タスク
 async def print_stats_loop():
