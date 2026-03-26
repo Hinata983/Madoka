@@ -14,7 +14,7 @@ BASE_URL    = 'https://api.example.com/v1'
 MODEL_NAME    = 'gemini-3-flash-preview'
 
 # 動作設定
-COOLDOWN_SECONDS    = 10    # ユーザーごとの連続送信制限秒数
+COOLDOWN_SECONDS    = 15    # ユーザーごとの連続送信制限秒数
 HISTORY_LIMIT_TALK    = 6    # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
 MAX_TOKENS                = 4096    # APIの最大出力トークン数
@@ -25,7 +25,7 @@ OUTPUT_LENGTH_TALK  = int(MAX_TOKENS * 0.30)
 OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.50)
 
 # 基本情報
-BOT_VERSION    = 'v1.5.2-202603P17'
+BOT_VERSION    = 'v1.5.4-202603P19'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
 
@@ -49,6 +49,7 @@ SYSTEM_PROMPT = f"""システム設定 (System)
 
 # システムプロンプト設定（翻訳モード）
 TRANSLATE_SYSTEM_PROMPT = f"""システム設定 (System)
+言語：ユーザーのプロンプトに順応
 機能：翻訳
 出力文字上限：{OUTPUT_LENGTH_TRANS}
 ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
@@ -56,6 +57,7 @@ TRANSLATE_SYSTEM_PROMPT = f"""システム設定 (System)
 
 # システムプロンプト設定（拡張翻訳モード）
 TRANSLATE_EXT_SYSTEM_PROMPT = """システム設定 (System)
+言語：ユーザーのプロンプトに順応
 機能：翻訳
 ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に全文翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
 """
@@ -148,7 +150,7 @@ async def on_message(message):
     
     # 空メッセージ判定
     if (not prompt or prompt == "." or prompt == "..") and not target_image_url:
-        await message.reply(EMPTY_PROMPT_REPLY, delete_after=10.0)
+        await message.reply(EMPTY_PROMPT_REPLY, delete_after=15.0)
         return
 
     # モード判定
@@ -220,8 +222,9 @@ async def on_message(message):
                         
                     current_msg = ref_msg
                     limit -= 1
-                except Exception:
-                    print("履歴取得エラー (e016)")
+                except Exception as e:
+                    print(f"履歴取得エラー (e021): {e}")
+                    await message.reply("履歴取得エラー (e021)", delete_after=15.0)
                     break
             
             # 履歴処理
@@ -265,14 +268,15 @@ async def on_message(message):
             else:
                 await message.reply(reply_text)
                 
-        except Exception:
-            await message.reply("リクエストエラー (e017)")
+        except Exception as e:
+            print(f"リクエストエラー (e041): {e}")
+            await message.reply("リクエストエラー (e041)", delete_after=15.0)
 
 # 統計表示タスク
 async def print_stats_loop():
     await discord_client.wait_until_ready()
     while not discord_client.is_closed():
-        await asyncio.sleep(600)
+        await asyncio.sleep(300)
         
         global request_count, total_tokens
         
@@ -288,7 +292,7 @@ async def print_stats_loop():
 async def cleanup_cooldowns_loop():
     await discord_client.wait_until_ready()
     while not discord_client.is_closed():
-        await asyncio.sleep(3600)
+        await asyncio.sleep(7200)
         user_cooldowns.clear()
 
 @discord_client.event
