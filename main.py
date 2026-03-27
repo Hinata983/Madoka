@@ -13,8 +13,13 @@ API_KEY    = 'YOUR_API_KEY'
 BASE_URL    = 'https://api.example.com/v1'
 MODEL_NAME    = 'gemini-3-flash-preview'
 
+# セカンドAPI設定
+SECOND_API_KEY    = 'YOUR_SECOND_API_KEY'
+SECOND_BASE_URL    = 'https://api.example.com/v1'
+SECOND_MODEL_NAME    = 'gemini-3-flash-preview'
+
 # 動作設定
-COOLDOWN_SECONDS    = 15    # ユーザーごとの連続送信制限秒数
+COOLDOWN_SECONDS    = 20    # ユーザーごとの連続送信制限秒数
 HISTORY_LIMIT_TALK    = 6    # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
 MAX_TOKENS                = 4096    # APIの最大出力トークン数
@@ -25,7 +30,7 @@ OUTPUT_LENGTH_TALK  = int(MAX_TOKENS * 0.30)
 OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.50)
 
 # 基本情報
-BOT_VERSION    = 'v1.5.4-202603P19'
+BOT_VERSION    = 'v1.6.1-202603P23'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
 
@@ -65,13 +70,23 @@ TRANSLATE_EXT_SYSTEM_PROMPT = """システム設定 (System)
 # 空メッセージへの返信
 EMPTY_PROMPT_REPLY = f"""About Madoka
 Version: {BOT_VERSION}
-Model: {MODEL_NAME}
+Cooldown: {COOLDOWN_SECONDS}
+
+Command List
+Enter the following symbols at the beginning of your message
+
+.[lang_code] [text]
+Translate mode
+
+, [text]
+Ignore (The bot will not respond)
 """
 
 # デバッグ用メッセージ
 DEBUG_MESSAGE_REPLY = f"""About Madoka
 Version: {BOT_VERSION}
 Model: {MODEL_NAME}
+Second Model: {SECOND_MODEL_NAME}
 
 Cooldown: {COOLDOWN_SECONDS}
 History Limit (Talk): {HISTORY_LIMIT_TALK}
@@ -90,10 +105,16 @@ user_cooldowns = {}
 request_count = 0
 total_tokens = 0
 
-# 非同期版OpenAIクライアントの初期化
+# 非同期OpenAIクライアントの初期化
 ai_client = AsyncOpenAI(
     api_key = API_KEY,
     base_url = BASE_URL,
+)
+
+# セカンドクライアントの初期化
+second_ai_client = AsyncOpenAI(
+    api_key = SECOND_API_KEY,
+    base_url = SECOND_BASE_URL,
 )
 
 # Discordボットの設定
@@ -150,7 +171,11 @@ async def on_message(message):
     
     # 空メッセージ判定
     if (not prompt or prompt == "." or prompt == "..") and not target_image_url:
-        await message.reply(EMPTY_PROMPT_REPLY, delete_after=15.0)
+        await message.reply(EMPTY_PROMPT_REPLY, delete_after=20.0)
+        return
+
+    # 無視判定
+    if prompt.startswith(','):
         return
 
     # モード判定
@@ -224,7 +249,7 @@ async def on_message(message):
                     limit -= 1
                 except Exception as e:
                     print(f"履歴取得エラー (e021): {e}")
-                    await message.reply("履歴取得エラー (e021)", delete_after=15.0)
+                    await message.reply("履歴取得エラー (e021)", delete_after=20.0)
                     break
             
             # 履歴処理
@@ -245,12 +270,27 @@ async def on_message(message):
                 messages_payload.append({"role": "user", "content": content_list})
 
             # リクエスト送信
-            response = await ai_client.chat.completions.create(
-                model = MODEL_NAME,
-                messages = messages_payload,
-                max_tokens = MAX_TOKENS,
-                temperature = TEMPERATURE,
-            )
+            try:
+                response = await asyncio.wait_for(
+                    ai_client.chat.completions.create(
+                        model = MODEL_NAME,
+                        messages = messages_payload,
+                        max_tokens = MAX_TOKENS,
+                        temperature = TEMPERATURE,
+                    ),
+                    timeout=20.0
+                )
+            except Exception as e:
+                print(f"メインAPIエラー (e042): {e}")
+                response = await asyncio.wait_for(
+                    second_ai_client.chat.completions.create(
+                        model = SECOND_MODEL_NAME,
+                        messages = messages_payload,
+                        max_tokens = MAX_TOKENS,
+                        temperature = TEMPERATURE,
+                    ),
+                    timeout=40.0
+                )
             
             # 統計カウント
             global request_count, total_tokens
@@ -270,7 +310,7 @@ async def on_message(message):
                 
         except Exception as e:
             print(f"リクエストエラー (e041): {e}")
-            await message.reply("リクエストエラー (e041)", delete_after=15.0)
+            await message.reply("リクエストエラー (e041)", delete_after=20.0)
 
 # 統計表示タスク
 async def print_stats_loop():
