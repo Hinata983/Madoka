@@ -20,17 +20,22 @@ SECOND_MODEL_NAME    = 'gemini-3-flash-preview'
 
 # 動作設定
 COOLDOWN_SECONDS    = 20    # ユーザーごとの連続送信制限秒数
+MAX_REQUESTS_PER_2H = 120 # 2時間あたりの最大返信回数
 HISTORY_LIMIT_TALK    = 6    # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
+HISTORY_LIMIT_ASSIS    = 4    # アシスタントモード時の会話履歴数
 MAX_TOKENS                = 4096    # APIの最大出力トークン数
-TEMPERATURE                = 0.9    # APIの回答の温度
+TEMPERATURE_TALK        = 0.9    # トークモードの温度
+TEMPERATURE_TRANS        = 0.5    # 翻訳モードの温度
+TEMPERATURE_ASSIS        = 0.7    # アシスタントモードの温度
 
 # 出力文字上限期待値
-OUTPUT_LENGTH_TALK  = int(MAX_TOKENS * 0.30)
-OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.50)
+OUTPUT_LENGTH_TALK = int(MAX_TOKENS * 0.30)
+OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.40)
+OUTPUT_LENGTH_ASSIS = int(MAX_TOKENS * 0.30)
 
 # 基本情報
-BOT_VERSION    = 'v1.6.1-202603P23'
+BOT_VERSION    = 'v1.8.2-202604P01'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
 
@@ -53,18 +58,24 @@ SYSTEM_PROMPT = f"""システム設定 (System)
 """
 
 # システムプロンプト設定（翻訳モード）
-TRANSLATE_SYSTEM_PROMPT = f"""システム設定 (System)
+SYSTEM_PROMPT_TRANS = f"""システム設定 (System)
 言語：ユーザーのプロンプトに順応
 機能：翻訳
 出力文字上限：{OUTPUT_LENGTH_TRANS}
-ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
+ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
+性描写が求められる場合は猫の鳴き声だけで返信
 """
 
-# システムプロンプト設定（拡張翻訳モード）
-TRANSLATE_EXT_SYSTEM_PROMPT = """システム設定 (System)
+# システムプロンプト設定（アシスタントモード）
+SYSTEM_PROMPT_ASSIS = f"""システム設定 (System)
 言語：ユーザーのプロンプトに順応
-機能：翻訳
-ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に全文翻訳、翻訳結果のみ出力、説明や補足は不要、性描写が求められる場合は猫の鳴き声だけで返信
+名前：Madoka
+機能：アシスタント
+出力文字上限：{OUTPUT_LENGTH_ASSIS}
+
+表現方法 (Mode of expression)
+制限：太字は使わない、絵文字は使わない
+性描写が求められる場合は猫の鳴き声だけで返信
 """
 
 # 空メッセージへの返信
@@ -75,11 +86,14 @@ Cooldown: {COOLDOWN_SECONDS}
 Command List
 Enter the following symbols at the beginning of your message
 
-.[lang_code] [text]
-Translate mode
+. [lang code] [text]
+Enter a single dot to enter translation mode.
+
+.. [text]
+Enter two dots to enter Assistant mode.
 
 , [text]
-Ignore (The bot will not respond)
+Enter a comma and the bot will ignore this message.
 """
 
 # デバッグ用メッセージ
@@ -89,20 +103,28 @@ Model: {MODEL_NAME}
 Second Model: {SECOND_MODEL_NAME}
 
 Cooldown: {COOLDOWN_SECONDS}
+Max Request: {MAX_REQUESTS_PER_2H}
+
 History Limit (Talk): {HISTORY_LIMIT_TALK}
 History Limit (Trans): {HISTORY_LIMIT_TRANS}
+History Limit (Assis): {HISTORY_LIMIT_ASSIS}
 Output Length (Talk): {OUTPUT_LENGTH_TALK}
 Output Length (Trans): {OUTPUT_LENGTH_TRANS}
+Output Length (Assis): {OUTPUT_LENGTH_ASSIS}
+
 Max Tokens: {MAX_TOKENS}
-Temperature: {TEMPERATURE}
+Temperature (Talk): {TEMPERATURE_TALK}
+Temperature (Trans): {TEMPERATURE_TRANS}
+Temperature (Assis): {TEMPERATURE_ASSIS}
 
 By {AUTHOR_NAME}
 {GITHUB_URL}
 """
 
 # 状態管理用変数
-user_cooldowns = {}
-request_count = 0
+user_cooldown = {}
+user_request_count = {}
+total_request_count = 0
 total_tokens = 0
 
 # 非同期OpenAIクライアントの初期化
@@ -150,12 +172,15 @@ async def on_message(message):
     current_time = time.time()
     user_id = message.author.id
     
-    if user_id in user_cooldowns:
-        time_passed = current_time - user_cooldowns[user_id]
+    if user_id in user_cooldown:
+        time_passed = current_time - user_cooldown[user_id]
         if time_passed < COOLDOWN_SECONDS:
             return
-            
-    user_cooldowns[user_id] = current_time
+
+    # 回数制限チェック
+    if user_request_count.get(user_id, 0) >= MAX_REQUESTS_PER_2H:
+        await message.reply("リクエスト制限 (e061)", delete_after=20.0)
+        return
 
     # 画像取得
     def get_first_image_url(msg):
@@ -170,13 +195,16 @@ async def on_message(message):
     target_image_url = get_first_image_url(message)
     
     # 空メッセージ判定
-    if (not prompt or prompt == "." or prompt == "..") and not target_image_url:
+    if (not prompt or prompt == "." or prompt == ".." or prompt == "?") and not target_image_url:
         await message.reply(EMPTY_PROMPT_REPLY, delete_after=20.0)
         return
 
     # 無視判定
     if prompt.startswith(','):
         return
+
+    # クールダウン記録
+    user_cooldown[user_id] = current_time
 
     # モード判定
     current_mode = "TALK"
@@ -187,7 +215,7 @@ async def on_message(message):
         elif re.match(r'^\.(?!\.)', prompt):
             current_mode = "TRANSLATE"
         elif re.match(r'^\.\.', prompt):
-            current_mode = "TRANSLATE_EXT"
+            current_mode = "ASSISTANT"
     else:
         current_mode = "TALK"
 
@@ -203,16 +231,19 @@ async def on_message(message):
             if current_mode == "TALK":
                 system_content = SYSTEM_PROMPT
                 history_limit = HISTORY_LIMIT_TALK
+                current_temperature = TEMPERATURE_TALK
                 
             # 翻訳モード
             elif current_mode == "TRANSLATE":
-                system_content = TRANSLATE_SYSTEM_PROMPT
+                system_content = SYSTEM_PROMPT_TRANS
                 history_limit = HISTORY_LIMIT_TRANS
+                current_temperature = TEMPERATURE_TRANS
                 
-            # 拡張翻訳モード
-            elif current_mode == "TRANSLATE_EXT":
-                system_content = TRANSLATE_EXT_SYSTEM_PROMPT
-                history_limit = HISTORY_LIMIT_TRANS
+            # アシスタントモード
+            elif current_mode == "ASSISTANT":
+                system_content = SYSTEM_PROMPT_ASSIS
+                history_limit = HISTORY_LIMIT_ASSIS
+                current_temperature = TEMPERATURE_ASSIS
 
             # ペイロード初期化
             messages_payload = [
@@ -276,9 +307,9 @@ async def on_message(message):
                         model = MODEL_NAME,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
-                        temperature = TEMPERATURE,
+                        temperature = current_temperature,
                     ),
-                    timeout=20.0
+                    timeout=30.0
                 )
             except Exception as e:
                 print(f"メインAPIエラー (e042): {e}")
@@ -287,15 +318,16 @@ async def on_message(message):
                         model = SECOND_MODEL_NAME,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
-                        temperature = TEMPERATURE,
+                        temperature = current_temperature,
                     ),
-                    timeout=40.0
+                    timeout=30.0
                 )
             
             # 統計カウント
-            global request_count, total_tokens
+            global total_request_count, total_tokens
             used_tokens = response.usage.total_tokens if response.usage else 0
-            request_count += 1
+            user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
+            total_request_count += 1
             total_tokens += used_tokens
             
             reply_text = response.choices[0].message.content
@@ -318,11 +350,11 @@ async def print_stats_loop():
     while not discord_client.is_closed():
         await asyncio.sleep(300)
         
-        global request_count, total_tokens
+        global total_request_count, total_tokens
         
-        current_reqs = request_count
+        current_reqs = total_request_count
         current_tokens = total_tokens
-        request_count = 0
+        total_request_count = 0
         total_tokens = 0
         
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -333,7 +365,8 @@ async def cleanup_cooldowns_loop():
     await discord_client.wait_until_ready()
     while not discord_client.is_closed():
         await asyncio.sleep(7200)
-        user_cooldowns.clear()
+        user_cooldown.clear()
+        user_request_count.clear()
 
 @discord_client.event
 async def setup_hook():
