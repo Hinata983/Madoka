@@ -2,42 +2,54 @@ import time
 import asyncio
 import discord
 import re
+import aiohttp
 from datetime import datetime
 from openai import AsyncOpenAI
+from markitdown import MarkItDown
 
 # Discordボットトークン設定
 DISCORD_TOKEN    = 'YOUR_DISCORD_TOKEN'
 
-# OpenAI互換API設定
-API_KEY    = 'YOUR_API_KEY'
-BASE_URL    = 'https://api.example.com/v1'
-MODEL_NAME    = 'gemini-3-flash-preview'
+# プライマリAPI設定
+PRIMARY_API_KEY       = 'YOUR_API_KEY'
+PRIMARY_BASE_URL      = 'https://api.example.com/v1'
+PRIMARY_MODEL_NAME    = 'gemini-3-flash-preview'
 
-# セカンドAPI設定
-SECOND_API_KEY    = 'YOUR_SECOND_API_KEY'
-SECOND_BASE_URL    = 'https://api.example.com/v1'
-SECOND_MODEL_NAME    = 'gemini-3-flash-preview'
+# セカンダリAPI設定
+SECONDARY_API_KEY       = 'YOUR_API_KEY'
+SECONDARY_BASE_URL      = 'https://api.example.com/v1'
+SECONDARY_MODEL_NAME    = 'gemini-3-flash-preview'
 
 # 動作設定
-COOLDOWN_SECONDS    = 20    # ユーザーごとの連続送信制限秒数
-MAX_REQUESTS_PER_2H = 120 # 2時間あたりの最大返信回数
-HISTORY_LIMIT_TALK    = 6    # トークモード時の会話履歴数
-HISTORY_LIMIT_TRANS    = 1    # 翻訳モード時の会話履歴数
-HISTORY_LIMIT_ASSIS    = 4    # アシスタントモード時の会話履歴数
-MAX_TOKENS                = 4096    # APIの最大出力トークン数
-TEMPERATURE_TALK        = 0.9    # トークモードの温度
-TEMPERATURE_TRANS        = 0.5    # 翻訳モードの温度
-TEMPERATURE_ASSIS        = 0.7    # アシスタントモードの温度
+COOLDOWN_SECONDS       = 15      # ユーザーごとの連続送信制限秒数
+MAX_REQUESTS_PER_2H    = 120     # 2時間あたりの最大返信回数
+HISTORY_LIMIT_TALK     = 6       # トークモード時の会話履歴数
+HISTORY_LIMIT_TRANS    = 1       # 翻訳モード時の会話履歴数
+HISTORY_LIMIT_ASSIS    = 4       # アシスタントモード時の会話履歴数
+MAX_TOKENS             = 4096    # APIの最大出力トークン数
+TEMPERATURE_TALK       = 0.9     # トークモードの温度
+TEMPERATURE_TRANS      = 0.5     # 翻訳モードの温度
+TEMPERATURE_ASSIS      = 0.7     # アシスタントモードの温度
+MAX_IMAGE_SIZE         = 10      # 画像最大サイズ
+MAX_MARKDOWN_SIZE      = 10      # Markdown最大サイズ
+MAX_MARKDOWN_LENGTH    = 2048    # Markdown最大文字数
 
 # 出力文字上限期待値
-OUTPUT_LENGTH_TALK = int(MAX_TOKENS * 0.30)
-OUTPUT_LENGTH_TRANS = int(MAX_TOKENS * 0.40)
-OUTPUT_LENGTH_ASSIS = int(MAX_TOKENS * 0.30)
+OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.30)
+OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
+OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.30)
 
 # 基本情報
-BOT_VERSION    = 'v1.8.2-202604P01'
+BOT_VERSION    = 'v1.10.3-202604B16'
 AUTHOR_NAME    = 'Hinata983'
-GITHUB_URL    = 'https://github.com/Hinata983/Madoka'
+GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
+
+# Markdown変換拡張子
+MARKDOWN_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.epub', '.txt', '.md']
+
+# URL正規表現
+GENERAL_URL_PATTERN = r'https?://\S+'
+IMAGE_URL_PATTERN = r'https?://\S+\.(?:jpg|jpeg|png|webp)(?:\?\S+)?'
 
 # システムプロンプト設定（トークモード）
 SYSTEM_PROMPT = f"""システム設定 (System)
@@ -75,7 +87,7 @@ SYSTEM_PROMPT_ASSIS = f"""システム設定 (System)
 
 表現方法 (Mode of expression)
 制限：太字は使わない、絵文字は使わない
-性描写が求められる場合は猫の鳴き声だけで返信
+性描写が求められる場合は旧約聖書の箴言だけで返信
 """
 
 # 空メッセージへの返信
@@ -87,20 +99,20 @@ Command List
 Enter the following symbols at the beginning of your message
 
 . [lang code] [text]
-Enter a single dot to enter translation mode.
+Enter a single dot to enter Translation mode.
 
 .. [text]
 Enter two dots to enter Assistant mode.
 
 , [text]
-Enter a comma and the bot will ignore this message.
+Enter a comma and the bot will Ignore this message.
 """
 
 # デバッグ用メッセージ
 DEBUG_MESSAGE_REPLY = f"""About Madoka
 Version: {BOT_VERSION}
-Model: {MODEL_NAME}
-Second Model: {SECOND_MODEL_NAME}
+Primary Model: {PRIMARY_MODEL_NAME}
+Secondary Model: {SECONDARY_MODEL_NAME}
 
 Cooldown: {COOLDOWN_SECONDS}
 Max Request: {MAX_REQUESTS_PER_2H}
@@ -117,6 +129,10 @@ Temperature (Talk): {TEMPERATURE_TALK}
 Temperature (Trans): {TEMPERATURE_TRANS}
 Temperature (Assis): {TEMPERATURE_ASSIS}
 
+Max Image Size: {MAX_IMAGE_SIZE}
+Max Markdown Size: {MAX_MARKDOWN_SIZE}
+Max Markdown Length: {MAX_MARKDOWN_LENGTH}
+
 By {AUTHOR_NAME}
 {GITHUB_URL}
 """
@@ -127,22 +143,23 @@ user_request_count = {}
 total_request_count = 0
 total_tokens = 0
 
-# 非同期OpenAIクライアントの初期化
-ai_client = AsyncOpenAI(
-    api_key = API_KEY,
-    base_url = BASE_URL,
+# プライマリクライアントの初期化
+primary_ai_client = AsyncOpenAI(
+    api_key = PRIMARY_API_KEY,
+    base_url = PRIMARY_BASE_URL,
 )
 
-# セカンドクライアントの初期化
-second_ai_client = AsyncOpenAI(
-    api_key = SECOND_API_KEY,
-    base_url = SECOND_BASE_URL,
+# セカンダリクライアントの初期化
+secondary_ai_client = AsyncOpenAI(
+    api_key = SECONDARY_API_KEY,
+    base_url = SECONDARY_BASE_URL,
 )
 
 # Discordボットの設定
 intents = discord.Intents.default()
 intents.message_content = True
 discord_client = discord.Client(intents=intents)
+
 
 @discord_client.event
 async def on_ready():
@@ -183,16 +200,120 @@ async def on_message(message):
         return
 
     # 画像取得
-    def get_first_image_url(msg):
+    async def get_first_image_url(msg):
         for attachment in msg.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 return attachment.url
         return None
 
+    # 画像URL取得
+    async def get_image_url_from_text(text):
+        match = re.search(IMAGE_URL_PATTERN, text, re.IGNORECASE)
+        if not match:
+            return None, text
+
+        url = match.group(0)
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url, timeout=5) as resp:
+                    size = int(resp.headers.get('Content-Length', 0))
+                    if size <= MAX_IMAGE_SIZE * 1024 * 1024:
+                        clean_text = text.replace(url, '').strip()
+                        return url, clean_text
+        except Exception as e:
+            print(f"URL画像サイズ確認エラー (e022): {e}")
+            
+        return None, text
+
+    # Markdown取得
+    async def get_attachment_markdown(msg, text):
+        for attachment in msg.attachments:
+            if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
+                if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                    def extract_and_convert(target_url, target_text):
+                        try:
+                            md = MarkItDown()
+                            result = md.convert(target_url)
+                            if result and result.text_content:
+                                md_text = result.text_content[:MAX_MARKDOWN_LENGTH]
+                                clean_text = target_text + f"\n\n{md_text}"
+                                return target_url, clean_text
+                        except Exception as e:
+                            print(f"Markdown変換エラー (e024): {e}")
+                        return None, target_text
+                    
+                    try:
+                        return await asyncio.wait_for(
+                            asyncio.to_thread(extract_and_convert, attachment.url, text),
+                            timeout=10.0
+                        )
+                    except asyncio.TimeoutError:
+                        print(f"Markdown変換タイムアウト (e025): {attachment.url}")
+                        return None, text
+        return None, text
+
+    # Markdown URL取得
+    async def get_markdown_from_text(text):
+        urls = re.findall(GENERAL_URL_PATTERN, text)
+        for url in urls:
+            if not re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.head(url, timeout=5) as resp:
+                            size = int(resp.headers.get('Content-Length', 0))
+                            
+                            if size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                                def extract_and_convert(target_url, target_text):
+                                    try:
+                                        md = MarkItDown()
+                                        result = md.convert(target_url)
+                                        if result and result.text_content:
+                                            md_text = result.text_content[:MAX_MARKDOWN_LENGTH]
+                                            clean_text = target_text.replace(target_url, '').strip()
+                                            clean_text += f"\n\n{md_text}"
+                                            return target_url, clean_text
+                                    except Exception as e:
+                                        print(f"URLMarkdown変換エラー (e026): {e}")
+                                    return None, target_text
+                                
+                                try:
+                                    return await asyncio.wait_for(
+                                        asyncio.to_thread(extract_and_convert, url, text),
+                                        timeout=10.0
+                                    )
+                                except asyncio.TimeoutError:
+                                    print(f"URLMarkdown変換タイムアウト (e027): {url}")
+                                    return None, text
+                                    
+                except Exception as e:
+                    print(f"URLサイズ確認エラー (e023): {e}")
+                    continue
+                
+        return None, text
+
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
     # 現在メッセージの画像取得
-    target_image_url = get_first_image_url(message)
+    target_image_url = await get_first_image_url(message)
+    target_markdown_url = None
+    
+    # 画像URLとMarkdown処理
+    if not target_image_url:
+        extracted_image_url, cleaned_prompt = await get_image_url_from_text(prompt)
+        if extracted_image_url:
+            target_image_url = extracted_image_url
+            prompt = cleaned_prompt
+        else:
+            extracted_markdown_url, cleaned_prompt = await get_attachment_markdown(message, prompt)
+            if extracted_markdown_url:
+                target_markdown_url = extracted_markdown_url
+                prompt = cleaned_prompt
+            elif prompt:
+                extracted_markdown_url, cleaned_prompt = await get_markdown_from_text(prompt)
+                if extracted_markdown_url:
+                    target_markdown_url = extracted_markdown_url
+                    prompt = cleaned_prompt
     
     # 空メッセージ判定
     if (not prompt or prompt == "." or prompt == ".." or prompt == "?") and not target_image_url:
@@ -253,7 +374,7 @@ async def on_message(message):
             history = []
             current_msg = message
             limit = history_limit
-            image_found = target_image_url is not None
+            image_found = (target_image_url is not None) or (target_markdown_url is not None)
             
             # 文脈構築
             while current_msg.reference and current_msg.reference.message_id and limit > 0:
@@ -265,7 +386,23 @@ async def on_message(message):
                     
                     hist_image_url = None
                     if not image_found:
-                        hist_image_url = get_first_image_url(ref_msg)
+                        hist_image_url = await get_first_image_url(ref_msg)
+                        if not hist_image_url:
+                            extracted_image_url, cleaned_content = await get_image_url_from_text(clean_content)
+                            if extracted_image_url:
+                                hist_image_url = extracted_image_url
+                                clean_content = cleaned_content
+                            else:
+                                hist_markdown_url, cleaned_content = await get_attachment_markdown(ref_msg, clean_content)
+                                if hist_markdown_url:
+                                    clean_content = cleaned_content
+                                    image_found = True
+                                elif clean_content:
+                                    hist_markdown_url, cleaned_content = await get_markdown_from_text(clean_content)
+                                    if hist_markdown_url:
+                                        clean_content = cleaned_content
+                                        image_found = True
+                                
                         if hist_image_url:
                             image_found = True
                     
@@ -303,24 +440,24 @@ async def on_message(message):
             # リクエスト送信
             try:
                 response = await asyncio.wait_for(
-                    ai_client.chat.completions.create(
-                        model = MODEL_NAME,
+                    primary_ai_client.chat.completions.create(
+                        model = PRIMARY_MODEL_NAME,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
                         temperature = current_temperature,
                     ),
-                    timeout=30.0
+                    timeout=40.0
                 )
             except Exception as e:
-                print(f"メインAPIエラー (e042): {e}")
+                print(f"プライマリAPIエラー (e042): {e}")
                 response = await asyncio.wait_for(
-                    second_ai_client.chat.completions.create(
-                        model = SECOND_MODEL_NAME,
+                    secondary_ai_client.chat.completions.create(
+                        model = SECONDARY_MODEL_NAME,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
                         temperature = current_temperature,
                     ),
-                    timeout=30.0
+                    timeout=40.0
                 )
             
             # 統計カウント
