@@ -6,9 +6,11 @@ import discord
 import aiohttp
 import ipaddress
 import urllib.parse
+import socket
 from datetime import datetime
 from openai import AsyncOpenAI
 from markitdown import MarkItDown
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Discordボットトークン設定
 DISCORD_TOKEN           = 'YOUR_DISCORD_TOKEN'
@@ -24,20 +26,23 @@ SECONDARY_BASE_URL      = 'https://api.example.com/v1'
 SECONDARY_MODEL_NAME    = 'gemini-3-flash-preview'
 
 # 動作設定
-COOLDOWN_SECONDS        = 15      # ユーザーごとの連続送信制限秒数
-MAX_REQUESTS_PER_2H     = 120     # 2時間あたりの最大返信回数
-HISTORY_LIMIT_TALK      = 6       # トークモード時の会話履歴数
-HISTORY_LIMIT_TRANS     = 1       # 翻訳モード時の会話履歴数
-HISTORY_LIMIT_ASSIS     = 4       # アシスタントモード時の会話履歴数
-MAX_TOKENS              = 4096    # APIの最大出力トークン数
-TEMPERATURE_TALK        = 0.9     # トークモードの温度
-TEMPERATURE_TRANS       = 0.5     # 翻訳モードの温度
-TEMPERATURE_ASSIS       = 0.7     # アシスタントモードの温度
-MAX_IMAGE_SIZE          = 10      # 画像最大サイズ
-MAX_MARKDOWN_SIZE       = 10      # Markdown最大サイズ
-MAX_MARKDOWN_LENGTH     = 2048    # Markdown最大文字数
-REQUEST_TIMEOUT         = 40.0    # APIリクエストタイムアウト
-MARKDOWN_TIMEOUT        = 40.0    # Markdown変換タイムアウト
+COOLDOWN_SECONDS           = 15       # ユーザーごとの連続送信制限秒数
+MAX_REQUESTS_PER_2H        = 120      # 2時間あたりの最大返信回数
+HISTORY_LIMIT_TALK         = 6        # トークモード時の会話履歴数
+HISTORY_LIMIT_TRANS        = 1        # 翻訳モード時の会話履歴数
+HISTORY_LIMIT_ASSIS        = 4        # アシスタントモード時の会話履歴数
+MAX_TOKENS                 = 4096     # APIの最大出力トークン数
+TEMPERATURE_TALK           = 0.9      # トークモードの温度
+TEMPERATURE_TRANS          = 0.5      # 翻訳モードの温度
+TEMPERATURE_ASSIS          = 0.7      # アシスタントモードの温度
+MAX_IMAGE_SIZE             = 10       # 画像最大サイズ
+MAX_MARKDOWN_SIZE          = 10       # Markdown最大サイズ
+MAX_MARKDOWN_LENGTH        = 2048     # Markdown最大文字数
+REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
+MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
+ENABLE_URL_PROCESS         = True     # URL処理スイッチ
+ENABLE_MARKDOWN_PROCESS    = True     # Markdown処理スイッチ
+ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
 
 # 出力文字上限期待値
 OUTPUT_LENGTH_TALK      = int(MAX_TOKENS * 0.30)
@@ -45,17 +50,21 @@ OUTPUT_LENGTH_TRANS     = int(MAX_TOKENS * 0.50)
 OUTPUT_LENGTH_ASSIS     = int(MAX_TOKENS * 0.30)
 
 # 基本情報
-BOT_VERSION    = 'v1.11.11-202604B27'
+BOT_VERSION    = 'v1.11.18-202605B06'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
 # URL正規表現
 GENERAL_URL_PATTERN = r'https?://\S+'
 IMAGE_URL_PATTERN = r'https?://\S+\.(?:jpg|jpeg|png|webp)(?:\?\S+)?'
+YOUTUBE_URL_PATTERN = r'(?:youtube\.com\/(?:watch\?v=|v\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})'
 
 # Markdown変換拡張子
-MARKDOWN_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.epub', '.txt', '.md']
+MARKDOWN_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.epub', '.html', '.htm', '.xml', '.json', '.msg', '.txt', '.md']
 MARKDOWN_EXCLUDE_EXTENSIONS = ['.zip', '.rar', '.7z']
+
+# YouTube字幕取得用プロキシ
+YOUTUBE_PROXY = 'socks5://username:password@ip_address:port'
 
 # システムプロンプト設定（トークモード）
 SYSTEM_PROMPT = f"""システム設定 (System)
@@ -142,6 +151,10 @@ Max Markdown Length: {MAX_MARKDOWN_LENGTH}
 Request Timeout: {REQUEST_TIMEOUT}
 Markdown Timeout: {MARKDOWN_TIMEOUT}
 
+Enable URL Process: {ENABLE_URL_PROCESS}
+Enable Markdown Process: {ENABLE_MARKDOWN_PROCESS}
+Enable Youtube Process: {ENABLE_YOUTUBE_PROCESS}
+
 By {AUTHOR_NAME}
 {GITHUB_URL}
 """
@@ -209,28 +222,39 @@ async def on_message(message):
         return
 
     # URL検証
-    def is_valid_markdown_url(url):
+    async def is_valid_markdown_url(url):
         try:
             parsed = urllib.parse.urlparse(url)
-            host = parsed.hostname or ""
-            path = parsed.path.lower()
             
-            if host.lower() == 'localhost':
+            if parsed.scheme not in ('http', 'https'):
                 return False
                 
-            try:
-                clean_host = host.strip('[]')
-                ip = ipaddress.ip_address(clean_host)
-                if (ip.is_private or 
-                    ip.is_loopback or 
-                    ip.is_multicast or 
-                    ip.is_link_local or 
-                    ip.is_unspecified):
-                    return False
-            except ValueError:
-                pass
-                    
+            host = parsed.hostname
+            if not host:
+                return False
+                
+            path = parsed.path.lower()
+            
             if any(path.endswith(ext) for ext in MARKDOWN_EXCLUDE_EXTENSIONS):
+                return False
+
+            try:
+                loop = asyncio.get_running_loop()
+                addr_info = await loop.getaddrinfo(host, None)
+                for info in addr_info:
+                    ip_str = info[4][0]
+                    ip = ipaddress.ip_address(ip_str)
+                    
+                    if (ip.is_private or 
+                        ip.is_loopback or 
+                        ip.is_multicast or 
+                        ip.is_link_local or 
+                        ip.is_unspecified or
+                        ip.is_reserved):
+                        return False
+            except socket.gaierror:
+                return False
+            except ValueError:
                 return False
                 
             return True
@@ -247,13 +271,16 @@ async def on_message(message):
 
     # 画像URL取得
     async def get_image_url_from_text(text):
+        if not ENABLE_URL_PROCESS:
+            return None, text
+
         match = re.search(IMAGE_URL_PATTERN, text, re.IGNORECASE)
         if not match:
             return None, text
 
         url = match.group(0)
         
-        if not is_valid_markdown_url(url):
+        if not await is_valid_markdown_url(url):
             return None, text
         
         try:
@@ -272,6 +299,9 @@ async def on_message(message):
 
     # Markdown取得
     async def get_markdown_from_attachment(msg, text):
+        if not ENABLE_MARKDOWN_PROCESS:
+            return None, text
+
         for attachment in msg.attachments:
             if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
                 if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
@@ -299,10 +329,45 @@ async def on_message(message):
 
     # Markdown URL取得
     async def get_markdown_from_text(text):
+        if not ENABLE_URL_PROCESS:
+            return None, text
+
         urls = re.findall(GENERAL_URL_PATTERN, text)
         for url in urls:
-            if not is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+            if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                 continue
+                
+            youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
+            if youtube_match:
+                if not ENABLE_YOUTUBE_PROCESS:
+                    continue
+                video_id = youtube_match.group(1)
+                
+                def extract_youtube_transcript(vid):
+                    try:
+                        proxies = {"http": YOUTUBE_PROXY, "https": YOUTUBE_PROXY} if YOUTUBE_PROXY else None
+                        transcript_list = YouTubeTranscriptApi.list_transcripts(vid, proxies=proxies)
+                        transcript = next(iter(transcript_list))
+                        transcript_data = transcript.fetch()
+                        return " ".join([item['text'] for item in transcript_data])
+                    except Exception as e:
+                        print(f"YouTube字幕取得エラー (e311): {e}")
+                        return None
+                        
+                try:
+                    transcript_text = await asyncio.wait_for(
+                        asyncio.to_thread(extract_youtube_transcript, video_id),
+                        timeout=MARKDOWN_TIMEOUT
+                    )
+                    if transcript_text:
+                        clean_text = text.replace(url, '').strip()
+                        clean_text += f"\n\n{transcript_text[:MAX_MARKDOWN_LENGTH]}"
+                        return url, clean_text
+                except asyncio.TimeoutError:
+                    print(f"YouTube字幕取得タイムアウト (e312): {url}")
+                
+                continue
+
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.head(url, timeout=5, allow_redirects=False) as resp:
@@ -396,17 +461,27 @@ async def on_message(message):
     # Markdownモード処理
     if current_mode == "MARKDOWN":
         target_url = None
+        youtube_video_id = None
         
-        for attachment in message.attachments:
-            if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
-                if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                    target_url = attachment.url
-                    break
+        if ENABLE_MARKDOWN_PROCESS:
+            for attachment in message.attachments:
+                if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
+                    if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                        target_url = attachment.url
+                        break
                     
-        if not target_url:
+        if not target_url and ENABLE_URL_PROCESS:
             urls = re.findall(GENERAL_URL_PATTERN, prompt)
             for url in urls:
-                if not is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
+                if youtube_match:
+                    if not ENABLE_YOUTUBE_PROCESS:
+                        continue
+                    target_url = url
+                    youtube_video_id = youtube_match.group(1)
+                    break
+
+                if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                     continue
                 try:
                     async with aiohttp.ClientSession() as session:
@@ -422,16 +497,25 @@ async def on_message(message):
         if not target_url and message.reference and message.reference.message_id:
             try:
                 ref_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-                for attachment in ref_msg.attachments:
-                    if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
-                        if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                            target_url = attachment.url
-                            break
-                if not target_url:
+                if ENABLE_MARKDOWN_PROCESS:
+                    for attachment in ref_msg.attachments:
+                        if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
+                            if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                                target_url = attachment.url
+                                break
+                if not target_url and ENABLE_URL_PROCESS:
                     ref_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
                     urls = re.findall(GENERAL_URL_PATTERN, ref_content)
                     for url in urls:
-                        if not is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                        youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
+                        if youtube_match:
+                            if not ENABLE_YOUTUBE_PROCESS:
+                                continue
+                            target_url = url
+                            youtube_video_id = youtube_match.group(1)
+                            break
+
+                        if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                             continue
                         try:
                             async with aiohttp.ClientSession() as session:
@@ -447,6 +531,17 @@ async def on_message(message):
                 pass
 
         if target_url:
+            def extract_youtube_transcript(vid):
+                try:
+                    proxies = {"http": YOUTUBE_PROXY, "https": YOUTUBE_PROXY} if YOUTUBE_PROXY else None
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(vid, proxies=proxies)
+                    transcript = next(iter(transcript_list))
+                    transcript_data = transcript.fetch()
+                    return " ".join([item['text'] for item in transcript_data])
+                except Exception as e:
+                    print(f"YouTube字幕取得エラー (e311): {e}")
+                    return None
+
             def convert_full_markdown(url):
                 try:
                     md = MarkItDown()
@@ -459,10 +554,17 @@ async def on_message(message):
 
             async with message.channel.typing():
                 try:
-                    md_text = await asyncio.wait_for(
-                        asyncio.to_thread(convert_full_markdown, target_url),
-                        timeout=MARKDOWN_TIMEOUT
-                    )
+                    if youtube_video_id:
+                        md_text = await asyncio.wait_for(
+                            asyncio.to_thread(extract_youtube_transcript, youtube_video_id),
+                            timeout=MARKDOWN_TIMEOUT
+                        )
+                    else:
+                        md_text = await asyncio.wait_for(
+                            asyncio.to_thread(convert_full_markdown, target_url),
+                            timeout=MARKDOWN_TIMEOUT
+                        )
+
                     if md_text:
                         file = discord.File(io.BytesIO(md_text.encode('utf-8')), filename="markdown.md")
                         
