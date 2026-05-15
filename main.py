@@ -2,31 +2,36 @@ import time
 import asyncio
 import io
 import re
-import discord
 import aiohttp
 import ipaddress
 import urllib.parse
 import socket
+import discord
+from discord import app_commands
 from datetime import datetime
 from openai import AsyncOpenAI
 from markitdown import MarkItDown
 from youtube_transcript_api import YouTubeTranscriptApi
 
 # Discordボットトークン設定
-DISCORD_TOKEN           = 'YOUR_DISCORD_TOKEN'
+DISCORD_TOKEN            = 'YOUR_DISCORD_TOKEN'
 
 # プライマリAPI設定
-PRIMARY_API_KEY         = 'YOUR_API_KEY'
-PRIMARY_BASE_URL        = 'https://api.example.com/v1'
-PRIMARY_MODEL_NAME      = 'gemini-3-flash-preview'
+PRIMARY_API_KEY          = 'YOUR_API_KEY'
+PRIMARY_BASE_URL         = 'https://api.example.com/v1'
+PRIMARY_MODEL_TALK       = 'gemini-3-flash-preview'
+PRIMARY_MODEL_TRANS      = 'gemini-3.1-flash-lite-preview'
+PRIMARY_MODEL_ASSIS      = 'gemini-3-flash-preview'
 
 # セカンダリAPI設定
-SECONDARY_API_KEY       = 'YOUR_API_KEY'
-SECONDARY_BASE_URL      = 'https://api.example.com/v1'
-SECONDARY_MODEL_NAME    = 'gemini-3-flash-preview'
+SECONDARY_API_KEY        = 'YOUR_API_KEY'
+SECONDARY_BASE_URL       = 'https://api.example.com/v1'
+SECONDARY_MODEL_TALK     = 'gemini-3-flash-preview'
+SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite-preview'
+SECONDARY_MODEL_ASSIS    = 'gemini-3-flash-preview'
 
 # 動作設定
-COOLDOWN_SECONDS           = 15       # ユーザーごとの連続送信制限秒数
+COOLDOWN_SECONDS           = 10       # ユーザーごとの連続送信制限秒数
 MAX_REQUESTS_PER_2H        = 120      # 2時間あたりの最大返信回数
 HISTORY_LIMIT_TALK         = 6        # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS        = 1        # 翻訳モード時の会話履歴数
@@ -40,17 +45,19 @@ MAX_MARKDOWN_SIZE          = 10       # Markdown最大サイズ
 MAX_MARKDOWN_LENGTH        = 2048     # Markdown最大文字数
 REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
 MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
+ENABLE_BOT_PROCESS         = True     # ボット返信スイッチ
+ENABLE_IMAGE_PROCESS       = True     # 画像処理スイッチ
 ENABLE_URL_PROCESS         = True     # URL処理スイッチ
 ENABLE_MARKDOWN_PROCESS    = True     # Markdown処理スイッチ
 ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
 
 # 出力文字上限期待値
-OUTPUT_LENGTH_TALK      = int(MAX_TOKENS * 0.30)
-OUTPUT_LENGTH_TRANS     = int(MAX_TOKENS * 0.50)
-OUTPUT_LENGTH_ASSIS     = int(MAX_TOKENS * 0.30)
+OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.20)
+OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
+OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.20)
 
 # 基本情報
-BOT_VERSION    = 'v1.11.18-202605B06'
+BOT_VERSION    = 'v1.12.11-202605B19'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
@@ -65,6 +72,9 @@ MARKDOWN_EXCLUDE_EXTENSIONS = ['.zip', '.rar', '.7z']
 
 # YouTube字幕取得用プロキシ
 YOUTUBE_PROXY = 'socks5://username:password@ip_address:port'
+
+# メンション制限
+MENTION_RESTRICTION = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=True)
 
 # システムプロンプト設定（トークモード）
 SYSTEM_PROMPT = f"""システム設定 (System)
@@ -105,29 +115,17 @@ SYSTEM_PROMPT_ASSIS = f"""システム設定 (System)
 性描写が求められる場合は旧約聖書の箴言だけで返信
 """
 
-# 空メッセージへの返信
-EMPTY_PROMPT_REPLY = f"""About Madoka
+# デバッグ情報
+DEBUG_INFORMATION = f"""About Madoka
 Version: {BOT_VERSION}
-Cooldown: {COOLDOWN_SECONDS}
 
-Command List
-Enter the following symbols at the beginning of your message
+Primary Model (Talk): {PRIMARY_MODEL_TALK}
+Primary Model (Trans): {PRIMARY_MODEL_TRANS}
+Primary Model (Assis): {PRIMARY_MODEL_ASSIS}
 
-. [lang code] [text]
-Enter a single dot to enter Translation mode.
-
-.. [text]
-Enter two dots to enter Assistant mode.
-
-, [text]
-Enter a comma and the bot will Ignore this message.
-"""
-
-# デバッグ用メッセージ
-DEBUG_MESSAGE_REPLY = f"""About Madoka
-Version: {BOT_VERSION}
-Primary Model: {PRIMARY_MODEL_NAME}
-Secondary Model: {SECONDARY_MODEL_NAME}
+Secondary Model (Talk): {SECONDARY_MODEL_TALK}
+Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
+Secondary Model (Assis): {SECONDARY_MODEL_ASSIS}
 
 Cooldown: {COOLDOWN_SECONDS}
 Max Request: {MAX_REQUESTS_PER_2H}
@@ -151,12 +149,163 @@ Max Markdown Length: {MAX_MARKDOWN_LENGTH}
 Request Timeout: {REQUEST_TIMEOUT}
 Markdown Timeout: {MARKDOWN_TIMEOUT}
 
+Enable Image Process: {ENABLE_IMAGE_PROCESS}
 Enable URL Process: {ENABLE_URL_PROCESS}
 Enable Markdown Process: {ENABLE_MARKDOWN_PROCESS}
 Enable Youtube Process: {ENABLE_YOUTUBE_PROCESS}
 
 By {AUTHOR_NAME}
 {GITHUB_URL}
+"""
+
+# ヘルプ情報
+HELP_INFORMATION = f"""Madokaについて
+バージョン: {BOT_VERSION}
+
+コマンドリスト
+メッセージの先頭に以下の記号を入力してください。
+
+.ta [テキスト]
+トークモードに入ります。
+
+.tr [言語コード] [テキスト]
+翻訳モードに入ります。
+
+.as [テキスト]
+アシスタントモードに入ります。
+
+, [テキスト]
+先頭にカンマを入ると、ボットはこのメッセージを無視します。
+
+ヒント
+Madokaのメッセージに返信すると、前の会話を継続できます。
+
+メッセージに .tr [言語コード] だけを返信すると、Madokaはそのメッセージを指定の言語に翻訳します。
+"""
+
+# ヘルプ情報（英語）
+HELP_INFORMATION_EN = f"""About Madoka
+Version: {BOT_VERSION}
+
+Command List
+Enter the following symbols at the beginning of your message.
+
+.ta [text]
+Enter Talk mode.
+
+.tr [lang code] [text]
+Enter Translation mode.
+
+.as [text]
+Enter Assistant mode.
+
+, [text]
+Enter a comma at the beginning and the bot will Ignore this message.
+
+Tips
+Reply to Madoka's messages to Continue the previous conversation.
+
+If you reply with only .tr [lang code] to a message, Madoka will translate that message into the specified language.
+"""
+
+# ヘルプ情報（フランス語）
+HELP_INFORMATION_FR = f"""À propos de Madoka
+Version: {BOT_VERSION}
+
+Liste des commandes
+Entrez les symboles suivants au début de votre message.
+
+.ta [texte]
+Passer en mode Discussion.
+
+.tr [code langue] [texte]
+Passer en mode Traduction.
+
+.as [texte]
+Passer en mode Assistant.
+
+, [texte]
+Ajoutez une virgule au début pour que le bot ignore ce message.
+
+Conseils
+Répondez aux messages de Madoka pour poursuivre la conversation précédente.
+
+Si vous répondez à un message avec seulement .tr [code langue], Madoka traduira ce message dans la langue spécifiée.
+"""
+
+# ヘルプ情報（ドイツ語）
+HELP_INFORMATION_DE = f"""Über Madoka
+Version: {BOT_VERSION}
+
+Befehlsliste
+Geben Sie die folgenden Symbole am Anfang Ihrer Nachricht ein.
+
+.ta [Text]
+Talk-Modus aktivieren.
+
+.tr [Sprachcode] [Text]
+Übersetzungsmodus aktivieren.
+
+.as [Text]
+Assistentenmodus aktivieren.
+
+, [Text]
+Setzen Sie ein Komma an den Anfang, damit der Bot diese Nachricht ignoriert.
+
+Tipps
+Antworten Sie auf Madokas Nachrichten, um die vorherige Konversation fortzusetzen.
+
+Wenn du nur mit .tr [Sprachcode] auf eine Nachricht antwortest, wird Madoka diese Nachricht in die angegebene Sprache übersetzen.
+"""
+
+# ヘルプ情報（韓国語）
+HELP_INFORMATION_KO = f"""Madoka에 대하여
+버전: {BOT_VERSION}
+
+명령어 목록
+메시지 시작 부분에 다음 기호를 입력하세요.
+
+.ta [텍스트]
+토크 모드로 들어갑니다.
+
+.tr [언어 코드] [텍스트]
+번역 모드로 들어갑니다.
+
+.as [텍스트]
+어시스턴트 모드로 들어갑니다.
+
+, [텍스트]
+앞에 쉼표를 넣으면 봇이 이 메시지를 무시합니다.
+
+팁
+Madoka의 메시지에 답장하면 이전 대화를 이어갈 수 있습니다.
+
+메시지에 .tr [언어 코드] 만 답장하면 Madoka는 해당 메시지를 지정된 언어로 번역합니다.
+"""
+
+# ヘルプ情報（中国語）
+HELP_INFORMATION_ZH = f"""關於 Madoka
+版本: {BOT_VERSION}
+
+指令列表
+請在訊息開頭輸入以下符號。
+
+.ta [文本]
+進入對話模式。
+
+.tr [語言代碼] [文本]
+進入翻譯模式。
+
+.as [文本]
+進入助手模式。
+
+, [文本]
+在開頭輸入逗號，機器人將忽略此訊息。
+
+提示
+回覆 Madoka 的訊息即可繼續之前的對話。
+
+若僅回覆訊息 .tr [語言代碼]，Madoka 會將該訊息翻譯為指定的語言。
 """
 
 # 状態管理用変数
@@ -180,8 +329,99 @@ secondary_ai_client = AsyncOpenAI(
 # Discordボットの設定
 intents = discord.Intents.default()
 intents.message_content = True
-discord_client = discord.Client(intents=intents)
+discord_client = discord.Client(intents=intents, max_messages=2000)
+tree = app_commands.CommandTree(discord_client)
 
+# スラッシュヘルプ情報
+@tree.command(name="help", description="Madokaのヘルプ情報を表示します")
+async def help_command(interaction: discord.Interaction):
+    if interaction.locale == discord.Locale.japanese:
+        await interaction.response.send_message(HELP_INFORMATION, ephemeral=True)
+    elif interaction.locale == discord.Locale.french:
+        await interaction.response.send_message(HELP_INFORMATION_FR, ephemeral=True)
+    elif interaction.locale == discord.Locale.german:
+        await interaction.response.send_message(HELP_INFORMATION_DE, ephemeral=True)
+    elif interaction.locale == discord.Locale.korean:
+        await interaction.response.send_message(HELP_INFORMATION_KO, ephemeral=True)
+    elif interaction.locale in [discord.Locale.taiwan_chinese, discord.Locale.chinese]:
+        await interaction.response.send_message(HELP_INFORMATION_ZH, ephemeral=True)
+    else:
+        await interaction.response.send_message(HELP_INFORMATION_EN, ephemeral=True)
+
+# スラッシュ翻訳モード
+@tree.command(name="translate", description="テキストを指定の言語に翻訳します")
+@app_commands.describe(lang="翻訳先の言語 (例: jp, en)", text="翻訳するテキスト")
+async def translate_command(interaction: discord.Interaction, lang: str, text: str):
+    user_id = interaction.user.id
+    current_time = time.time()
+
+    # クールダウンチェック
+    if user_id in user_cooldown:
+        time_passed = current_time - user_cooldown[user_id]
+        if time_passed < COOLDOWN_SECONDS:
+            remaining_time = int(COOLDOWN_SECONDS - time_passed)
+            await interaction.response.send_message(f"クールダウン中 (残り {remaining_time} 秒)", ephemeral=True)
+            return
+
+    # 回数制限チェック
+    if user_request_count.get(user_id, 0) >= MAX_REQUESTS_PER_2H:
+        await interaction.response.send_message("リクエスト制限 (e201)", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+
+    # クールダウン更新
+    user_cooldown[user_id] = current_time
+
+    # ペイロード構築
+    prompt_with_lang = f".{lang} {text}"[:MAX_MARKDOWN_LENGTH]
+    messages_payload = [
+        {"role": "system", "content": SYSTEM_PROMPT_TRANS},
+        {"role": "user", "content": prompt_with_lang}
+    ]
+
+    try:
+        try:
+            response = await asyncio.wait_for(
+                primary_ai_client.chat.completions.create(
+                    model = PRIMARY_MODEL_TRANS,
+                    messages = messages_payload,
+                    max_tokens = MAX_TOKENS,
+                    temperature = TEMPERATURE_TRANS,
+                ),
+                timeout=REQUEST_TIMEOUT
+            )
+        except Exception:
+            response = await asyncio.wait_for(
+                secondary_ai_client.chat.completions.create(
+                    model = SECONDARY_MODEL_TRANS,
+                    messages = messages_payload,
+                    max_tokens = MAX_TOKENS,
+                    temperature = TEMPERATURE_TRANS,
+                ),
+                timeout=REQUEST_TIMEOUT
+            )
+        
+        # 統計カウント
+        global total_request_count, total_tokens
+        used_tokens = response.usage.total_tokens if response.usage else 0
+        user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
+        total_request_count += 1
+        total_tokens += used_tokens
+        
+        reply_text = response.choices[0].message.content
+        
+        # 分割送信
+        if len(reply_text) > 2000:
+            await interaction.followup.send(reply_text[:2000], allowed_mentions=MENTION_RESTRICTION)
+            for i in range(2000, len(reply_text), 2000):
+                await interaction.followup.send(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION)
+        else:
+            await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION)
+                
+    except Exception as e:
+        print(f"スラッシュコマンドエラー (e502) (tr): {e}")
+        await interaction.followup.send("リクエストエラー (e502)", ephemeral=True)
 
 @discord_client.event
 async def on_ready():
@@ -192,7 +432,7 @@ async def on_message(message):
     if message.author == discord_client.user:
         return
 
-    # メンションと返信の判定
+    # メンションとリプライ判定
     is_mentioned = discord_client.user in message.mentions
     is_reply_to_bot = False
     
@@ -204,7 +444,14 @@ async def on_message(message):
         except Exception:
             pass
 
-    if not (is_mentioned or is_reply_to_bot):
+    # プレフィックス判定
+    is_prefix = message.content.startswith(('.ta ', '.tr ', '.as '))
+
+    if not (is_mentioned or is_reply_to_bot or is_prefix):
+        return
+
+    # ボット返信スイッチチェック
+    if not ENABLE_BOT_PROCESS:
         return
 
     # クールダウンチェック
@@ -214,6 +461,8 @@ async def on_message(message):
     if user_id in user_cooldown:
         time_passed = current_time - user_cooldown[user_id]
         if time_passed < COOLDOWN_SECONDS:
+            remaining_time = int(COOLDOWN_SECONDS - time_passed)
+            await message.reply(f"クールダウン中 (残り {remaining_time} 秒)", delete_after=remaining_time)
             return
 
     # 回数制限チェック
@@ -262,7 +511,9 @@ async def on_message(message):
             return False
 
     # 画像取得
-    async def get_image_url_from_attachment(msg):
+    async def get_image_from_attachment(msg):
+        if not ENABLE_IMAGE_PROCESS:
+            return None
         for attachment in msg.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 if attachment.size <= MAX_IMAGE_SIZE * 1024 * 1024:
@@ -270,8 +521,8 @@ async def on_message(message):
         return None
 
     # 画像URL取得
-    async def get_image_url_from_text(text):
-        if not ENABLE_URL_PROCESS:
+    async def get_image_from_text(text):
+        if not ENABLE_URL_PROCESS or not ENABLE_IMAGE_PROCESS:
             return None, text
 
         match = re.search(IMAGE_URL_PATTERN, text, re.IGNORECASE)
@@ -329,7 +580,7 @@ async def on_message(message):
 
     # Markdown URL取得
     async def get_markdown_from_text(text):
-        if not ENABLE_URL_PROCESS:
+        if not ENABLE_URL_PROCESS or not ENABLE_MARKDOWN_PROCESS:
             return None, text
 
         urls = re.findall(GENERAL_URL_PATTERN, text)
@@ -405,13 +656,25 @@ async def on_message(message):
 
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
+    # プレフィックスによるモード判定
+    prefix_mode = None
+    if prompt.startswith('.ta '):
+        prefix_mode = "TALK"
+        prompt = "." + prompt[4:]
+    elif prompt.startswith('.tr '):
+        prefix_mode = "TRANSLATE"
+        prompt = "." + prompt[4:]
+    elif prompt.startswith('.as '):
+        prefix_mode = "ASSISTANT"
+        prompt = "." + prompt[4:]
+
     # 現在メッセージの画像取得
-    target_image_url = await get_image_url_from_attachment(message)
+    target_image_url = await get_image_from_attachment(message)
     target_markdown_url = None
     
     # 画像URLとMarkdown処理
     if not target_image_url:
-        extracted_image_url, cleaned_prompt = await get_image_url_from_text(prompt)
+        extracted_image_url, cleaned_prompt = await get_image_from_text(prompt)
         if extracted_image_url:
             target_image_url = extracted_image_url
             prompt = cleaned_prompt
@@ -428,34 +691,36 @@ async def on_message(message):
     
     # 空メッセージ判定
     if (not prompt or prompt == "." or prompt == ".." or prompt == "?") and not target_image_url:
-        await message.reply(EMPTY_PROMPT_REPLY, delete_after=20.0)
+        await message.reply(HELP_INFORMATION, delete_after=20.0, allowed_mentions=MENTION_RESTRICTION)
         return
 
     # 無視判定
     if prompt.startswith(','):
         return
 
-    # クールダウン記録
+    # クールダウン更新
     user_cooldown[user_id] = current_time
 
     # モード判定
     current_mode = "TALK"
     
-    if prompt:
-        if re.match(r'^\.\.debug', prompt):
+    if prefix_mode:
+        current_mode = prefix_mode
+    elif prompt:
+        if re.match(r'^\.tr ', prompt):
+            current_mode = "TRANSLATE"
+        elif re.match(r'^\.as ', prompt):
+            current_mode = "ASSISTANT"
+        elif re.match(r'^\.\.debug', prompt):
             current_mode = "DEBUG"
         elif re.match(r'^\.\.markdown', prompt):
             current_mode = "MARKDOWN"
-        elif re.match(r'^\.(?!\.)', prompt):
-            current_mode = "TRANSLATE"
-        elif re.match(r'^\.\.', prompt):
-            current_mode = "ASSISTANT"
     else:
         current_mode = "TALK"
 
     # デバッグモード処理
     if current_mode == "DEBUG":
-        await message.reply(DEBUG_MESSAGE_REPLY)
+        await message.reply(DEBUG_INFORMATION, allowed_mentions=MENTION_RESTRICTION)
         return
 
     # Markdownモード処理
@@ -572,7 +837,7 @@ async def on_message(message):
                         user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
                         total_request_count += 1
                         
-                        await message.reply(file=file)
+                        await message.reply(file=file, allowed_mentions=MENTION_RESTRICTION)
                         return
                     else:
                         await message.reply("Markdown変換できません (e308)", delete_after=20.0)
@@ -593,18 +858,24 @@ async def on_message(message):
                 system_content = SYSTEM_PROMPT
                 history_limit = HISTORY_LIMIT_TALK
                 current_temperature = TEMPERATURE_TALK
+                current_primary_model = PRIMARY_MODEL_TALK
+                current_secondary_model = SECONDARY_MODEL_TALK
                 
             # 翻訳モード
             elif current_mode == "TRANSLATE":
                 system_content = SYSTEM_PROMPT_TRANS
                 history_limit = HISTORY_LIMIT_TRANS
                 current_temperature = TEMPERATURE_TRANS
+                current_primary_model = PRIMARY_MODEL_TRANS
+                current_secondary_model = SECONDARY_MODEL_TRANS
                 
             # アシスタントモード
             elif current_mode == "ASSISTANT":
                 system_content = SYSTEM_PROMPT_ASSIS
                 history_limit = HISTORY_LIMIT_ASSIS
                 current_temperature = TEMPERATURE_ASSIS
+                current_primary_model = PRIMARY_MODEL_ASSIS
+                current_secondary_model = SECONDARY_MODEL_ASSIS
 
             # ペイロード初期化
             messages_payload = [
@@ -626,9 +897,9 @@ async def on_message(message):
                     
                     hist_attachment_url = None
                     if not attachment_found:
-                        hist_attachment_url = await get_image_url_from_attachment(ref_msg)
+                        hist_attachment_url = await get_image_from_attachment(ref_msg)
                         if not hist_attachment_url:
-                            extracted_image_url, cleaned_content = await get_image_url_from_text(clean_content)
+                            extracted_image_url, cleaned_content = await get_image_from_text(clean_content)
                             if extracted_image_url:
                                 hist_attachment_url = extracted_image_url
                                 clean_content = cleaned_content
@@ -681,7 +952,7 @@ async def on_message(message):
             try:
                 response = await asyncio.wait_for(
                     primary_ai_client.chat.completions.create(
-                        model = PRIMARY_MODEL_NAME,
+                        model = current_primary_model,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
                         temperature = current_temperature,
@@ -692,7 +963,7 @@ async def on_message(message):
                 print(f"プライマリAPIエラー (e501): {e}")
                 response = await asyncio.wait_for(
                     secondary_ai_client.chat.completions.create(
-                        model = SECONDARY_MODEL_NAME,
+                        model = current_secondary_model,
                         messages = messages_payload,
                         max_tokens = MAX_TOKENS,
                         temperature = current_temperature,
@@ -713,9 +984,9 @@ async def on_message(message):
             if len(reply_text) > 2000:
                 target_message = message
                 for i in range(0, len(reply_text), 2000):
-                    target_message = await target_message.reply(reply_text[i:i+2000])
+                    target_message = await target_message.reply(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION)
             else:
-                await message.reply(reply_text)
+                await message.reply(reply_text, allowed_mentions=MENTION_RESTRICTION)
                 
         except Exception as e:
             print(f"リクエストエラー (e502): {e}")
@@ -745,8 +1016,65 @@ async def cleanup_cooldowns_loop():
         user_cooldown.clear()
         user_request_count.clear()
 
+# ローカライズクラス
+class CommandTranslator(app_commands.Translator):
+    async def translate(self, string: app_commands.locale_str, locale: discord.Locale, context: app_commands.TranslationContext) -> str | None:
+        if locale in (discord.Locale.american_english, discord.Locale.british_english):
+            if string.message == "Madokaのヘルプ情報を表示します":
+                return "Displays help information for Madoka"
+            elif string.message == "テキストを指定の言語に翻訳します":
+                return "Translate text into the specified language"
+            elif string.message == "翻訳先の言語 (例: jp, en)":
+                return "Target language (e.g., en, ja)"
+            elif string.message == "翻訳するテキスト":
+                return "Text to translate"
+
+        elif locale == discord.Locale.french:
+            if string.message == "Madokaのヘルプ情報を表示します":
+                return "Affiche les informations d'aide pour Madoka"
+            elif string.message == "テキストを指定の言語に翻訳します":
+                return "Traduit le texte dans la langue spécifiée"
+            elif string.message == "翻訳先の言語 (例: jp, en)":
+                return "Langue cible (ex: fr, ja)"
+            elif string.message == "翻訳するテキスト":
+                return "Texte à traduire"
+
+        elif locale == discord.Locale.german:
+            if string.message == "Madokaのヘルプ情報を表示します":
+                return "Zeigt Hilfeinformationen für Madoka an"
+            elif string.message == "テキストを指定の言語に翻訳します":
+                return "Übersetzt Text in die angegebene Sprache"
+            elif string.message == "翻訳先の言語 (例: jp, en)":
+                return "Zielsprache (z.B. de, ja)"
+            elif string.message == "翻訳するテキスト":
+                return "Zu übersetzender Text"
+
+        elif locale == discord.Locale.korean:
+            if string.message == "Madokaのヘルプ情報を表示します":
+                return "Madoka의 도움말 정보를 표시합니다"
+            elif string.message == "テキストを指定の言語に翻訳します":
+                return "텍스트를 지정된 언어로 번역합니다"
+            elif string.message == "翻訳先の言語 (例: jp, en)":
+                return "번역할 언어 (예: ko, ja)"
+            elif string.message == "翻訳するテキスト":
+                return "번역할 텍스트"
+
+        elif locale in (discord.Locale.taiwan_chinese, discord.Locale.chinese):
+            if string.message == "Madokaのヘルプ情報を表示します":
+                return "顯示 Madoka 的幫助資訊"
+            elif string.message == "テキストを指定の言語に翻訳します":
+                return "將文本翻譯成指定語言"
+            elif string.message == "翻訳先の言語 (例: jp, en)":
+                return "目標語言 (例: zht, ja)"
+            elif string.message == "翻訳するテキスト":
+                return "要翻譯的文本"
+
+        return None
+
 @discord_client.event
 async def setup_hook():
+    await tree.set_translator(CommandTranslator())
+    await tree.sync()
     discord_client.loop.create_task(print_stats_loop())
     discord_client.loop.create_task(cleanup_cooldowns_loop())
 
