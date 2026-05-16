@@ -1,17 +1,19 @@
 import time
-import asyncio
-import io
 import re
+import io
+import asyncio
 import aiohttp
 import ipaddress
 import urllib.parse
 import socket
 import discord
 from discord import app_commands
-from datetime import datetime
 from openai import AsyncOpenAI
 from markitdown import MarkItDown
 from youtube_transcript_api import YouTubeTranscriptApi
+import os
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Discordボットトークン設定
 DISCORD_TOKEN            = 'YOUR_DISCORD_TOKEN'
@@ -32,7 +34,7 @@ SECONDARY_MODEL_ASSIS    = 'gemini-3-flash-preview'
 
 # 動作設定
 COOLDOWN_SECONDS           = 10       # ユーザーごとの連続送信制限秒数
-MAX_REQUESTS_PER_2H        = 120      # 2時間あたりの最大返信回数
+MAX_REQUESTS_PER_2H        = 90       # 2時間あたりの最大返信回数
 HISTORY_LIMIT_TALK         = 6        # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS        = 1        # 翻訳モード時の会話履歴数
 HISTORY_LIMIT_ASSIS        = 4        # アシスタントモード時の会話履歴数
@@ -47,17 +49,17 @@ REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
 MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
 ENABLE_BOT_PROCESS         = True     # ボット返信スイッチ
 ENABLE_IMAGE_PROCESS       = True     # 画像処理スイッチ
-ENABLE_URL_PROCESS         = True     # URL処理スイッチ
-ENABLE_MARKDOWN_PROCESS    = True     # Markdown処理スイッチ
+ENABLE_URL_PROCESS         = False    # URL処理スイッチ
+ENABLE_MARKDOWN_PROCESS    = False    # Markdown処理スイッチ
 ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
 
 # 出力文字上限期待値
-OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.20)
+OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.10)
 OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
-OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.20)
+OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.10)
 
 # 基本情報
-BOT_VERSION    = 'v1.12.11-202605B19'
+BOT_VERSION    = 'v1.13.3-202605B23'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
@@ -77,11 +79,11 @@ YOUTUBE_PROXY = 'socks5://username:password@ip_address:port'
 MENTION_RESTRICTION = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=True)
 
 # システムプロンプト設定（トークモード）
-SYSTEM_PROMPT = f"""システム設定 (System)
+SYSTEM_PROMPT = f"""出力文字上限：{OUTPUT_LENGTH_TALK}
+システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
 機能：物語を推進
-出力文字上限：{OUTPUT_LENGTH_TALK}
 
 表現方法 (Mode of expression)
 制限：太字は使わない、絵文字は使わない
@@ -95,20 +97,20 @@ SYSTEM_PROMPT = f"""システム設定 (System)
 """
 
 # システムプロンプト設定（翻訳モード）
-SYSTEM_PROMPT_TRANS = f"""システム設定 (System)
+SYSTEM_PROMPT_TRANS = f"""出力文字上限：{OUTPUT_LENGTH_TRANS}
+システム設定 (System)
 言語：ユーザーのプロンプトに順応
 機能：翻訳
-出力文字上限：{OUTPUT_LENGTH_TRANS}
 ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
 性描写が求められる場合は猫の鳴き声だけで返信
 """
 
 # システムプロンプト設定（アシスタントモード）
-SYSTEM_PROMPT_ASSIS = f"""システム設定 (System)
+SYSTEM_PROMPT_ASSIS = f"""出力文字上限：{OUTPUT_LENGTH_ASSIS}
+システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
 機能：アシスタント
-出力文字上限：{OUTPUT_LENGTH_ASSIS}
 
 表現方法 (Mode of expression)
 制限：太字は使わない、絵文字は使わない
@@ -128,7 +130,7 @@ Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
 Secondary Model (Assis): {SECONDARY_MODEL_ASSIS}
 
 Cooldown: {COOLDOWN_SECONDS}
-Max Request: {MAX_REQUESTS_PER_2H}
+Max Requests: {MAX_REQUESTS_PER_2H}
 
 History Limit (Talk): {HISTORY_LIMIT_TALK}
 History Limit (Trans): {HISTORY_LIMIT_TRANS}
@@ -308,6 +310,23 @@ HELP_INFORMATION_ZH = f"""關於 Madoka
 若僅回覆訊息 .tr [語言代碼]，Madoka 會將該訊息翻譯為指定的語言。
 """
 
+# ログ設定
+os.makedirs('logs', exist_ok=True)
+
+logger = logging.getLogger('Madoka')
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+file_handler = RotatingFileHandler('logs/madoka', maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
 # 状態管理用変数
 user_cooldown = {}
 user_request_count = {}
@@ -350,7 +369,7 @@ async def help_command(interaction: discord.Interaction):
 
 # スラッシュ翻訳モード
 @tree.command(name="translate", description="テキストを指定の言語に翻訳します")
-@app_commands.describe(lang="翻訳先の言語 (例: jp, en)", text="翻訳するテキスト")
+@app_commands.describe(lang="翻訳先の言語 (例: ja, en)", text="翻訳するテキスト")
 async def translate_command(interaction: discord.Interaction, lang: str, text: str):
     user_id = interaction.user.id
     current_time = time.time()
@@ -391,7 +410,8 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
                 ),
                 timeout=REQUEST_TIMEOUT
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"プライマリAPIエラー (e501) (sltr): {e}")
             response = await asyncio.wait_for(
                 secondary_ai_client.chat.completions.create(
                     model = SECONDARY_MODEL_TRANS,
@@ -420,12 +440,12 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
             await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION)
                 
     except Exception as e:
-        print(f"スラッシュコマンドエラー (e502) (tr): {e}")
+        logger.error(f"スラッシュコマンドエラー (e502) (sltr): {e}")
         await interaction.followup.send("リクエストエラー (e502)", ephemeral=True)
 
 @discord_client.event
 async def on_ready():
-    print(f'{discord_client.user} logged in.')
+    logger.info(f'{discord_client.user} logged in.')
 
 @discord_client.event
 async def on_message(message):
@@ -471,41 +491,169 @@ async def on_message(message):
         return
 
     # URL検証
-    async def is_valid_markdown_url(url):
+    async def is_valid_url(url):
         try:
-            parsed = urllib.parse.urlparse(url)
-            
-            if parsed.scheme not in ('http', 'https'):
+            if not url or not isinstance(url, str):
                 return False
-                
-            host = parsed.hostname
-            if not host:
+            if len(url) > 2048:
                 return False
-                
-            path = parsed.path.lower()
-            
-            if any(path.endswith(ext) for ext in MARKDOWN_EXCLUDE_EXTENSIONS):
+
+            if any(ord(c) < 0x20 or ord(c) == 0x7f for c in url):
+                return False
+            if any(c in url for c in ('\r', '\n', '\t', ' ')):
+                return False
+            if url.count('@') > 1:
                 return False
 
             try:
-                loop = asyncio.get_running_loop()
-                addr_info = await loop.getaddrinfo(host, None)
-                for info in addr_info:
-                    ip_str = info[4][0]
-                    ip = ipaddress.ip_address(ip_str)
-                    
-                    if (ip.is_private or 
-                        ip.is_loopback or 
-                        ip.is_multicast or 
-                        ip.is_link_local or 
-                        ip.is_unspecified or
-                        ip.is_reserved):
-                        return False
-            except socket.gaierror:
-                return False
+                parsed = urllib.parse.urlparse(url)
             except ValueError:
                 return False
-                
+
+            if parsed.scheme not in ('http', 'https'):
+                return False
+
+            if parsed.username is not None or parsed.password is not None:
+                return False
+
+            host = parsed.hostname
+            if not host or len(host) > 253:
+                return False
+
+            try:
+                port = parsed.port
+            except ValueError:
+                return False
+            if port is not None and port not in (80, 443):
+                return False
+
+            path = (parsed.path or '').lower()
+            if any(path.endswith(ext) for ext in MARKDOWN_EXCLUDE_EXTENSIONS):
+                return False
+
+            host_lower = host.lower().rstrip('.')
+            blocked_names = {
+                'localhost',
+                'ip6-localhost',
+                'ip6-loopback',
+                'broadcasthost',
+                'metadata',
+                'metadata.google.internal',
+                'metadata.goog',
+                'kubernetes.default',
+                'kubernetes.default.svc',
+            }
+            if host_lower in blocked_names:
+                return False
+            if any(host_lower.endswith(suf) for suf in
+                   ('.local',
+                    '.internal',
+                    '.localhost',
+                    '.lan',
+                    '.intra',
+                    '.corp',
+                    '.home',
+                    '.private')):
+                return False
+
+            try:
+                idna_host = host_lower.encode('idna').decode('ascii').lower()
+                if idna_host in blocked_names:
+                    return False
+            except (UnicodeError, UnicodeDecodeError):
+                return False
+
+            if host.isdigit():
+                return False
+            if re.fullmatch(r'0[xX][0-9a-fA-F]+', host):
+                return False
+            if re.fullmatch(r'[0-9a-fA-FxX\.]+', host) and \
+               any(ch in host for ch in 'xX'):
+                return False
+
+            def is_dangerous_ip(ip):
+                if isinstance(ip, ipaddress.IPv6Address):
+                    if ip.ipv4_mapped is not None:
+                        ip = ip.ipv4_mapped
+                    elif ip.sixtofour is not None:
+                        ip = ip.sixtofour
+                    elif ip.teredo is not None:
+                        _, client_ip = ip.teredo
+                        if is_dangerous_ip(client_ip):
+                            return True
+
+                if (ip.is_private or ip.is_loopback or ip.is_multicast or
+                        ip.is_link_local or ip.is_unspecified or
+                        ip.is_reserved):
+                    return True
+
+                v4_blocks = (
+                    '0.0.0.0/8',
+                    '100.64.0.0/10',
+                    '169.254.0.0/16',
+                    '192.0.0.0/24',
+                    '192.0.2.0/24',
+                    '198.18.0.0/15',
+                    '198.51.100.0/24',
+                    '203.0.113.0/24',
+                    '224.0.0.0/4',
+                    '240.0.0.0/4',
+                    '255.255.255.255/32',
+                )
+                v6_blocks = (
+                    '::/128', '::1/128',
+                    'fc00::/7',
+                    'fe80::/10',
+                    'ff00::/8',
+                    '2001:db8::/32',
+                    '64:ff9b::/96',
+                    '100::/64',
+                    '2002::/16',
+                )
+                if isinstance(ip, ipaddress.IPv4Address):
+                    for cidr in v4_blocks:
+                        if ip in ipaddress.ip_network(cidr):
+                            return True
+                else:
+                    for cidr in v6_blocks:
+                        if ip in ipaddress.ip_network(cidr):
+                            return True
+                return False
+
+            literal_ip = None
+            try:
+                literal_ip = ipaddress.ip_address(host)
+            except ValueError:
+                pass
+
+            if literal_ip is not None:
+                if is_dangerous_ip(literal_ip):
+                    return False
+            else:
+                try:
+                    loop = asyncio.get_running_loop()
+                    addr_info = await asyncio.wait_for(
+                        loop.getaddrinfo(host, None,
+                                         type=socket.SOCK_STREAM),
+                        timeout=5.0,
+                    )
+                except (asyncio.TimeoutError, socket.gaierror, OSError):
+                    return False
+
+                if not addr_info:
+                    return False
+
+                for info in addr_info:
+                    ip_str = info[4][0]
+                    if '%' in ip_str:
+                        ip_str = ip_str.split('%', 1)[0]
+                    try:
+                        ip_obj = ipaddress.ip_address(ip_str)
+                    except ValueError:
+                        return False
+                    if is_dangerous_ip(ip_obj):
+                        return False
+
             return True
         except Exception:
             return False
@@ -531,7 +679,7 @@ async def on_message(message):
 
         url = match.group(0)
         
-        if not await is_valid_markdown_url(url):
+        if not await is_valid_url(url):
             return None, text
         
         try:
@@ -544,7 +692,7 @@ async def on_message(message):
                         clean_text = text.replace(url, '').strip()
                         return url, clean_text
         except Exception as e:
-            print(f"URL画像サイズ確認エラー (e301): {e}")
+            logger.info(f"URL画像サイズ確認エラー (e301): {e}")
             
         return None, text
 
@@ -565,7 +713,7 @@ async def on_message(message):
                                 clean_text = target_text + f"\n\n{md_text}"
                                 return target_url, clean_text
                         except Exception as e:
-                            print(f"Markdown変換エラー (e302): {e}")
+                            logger.info(f"Markdown変換エラー (e302): {e}")
                         return None, target_text
                     
                     try:
@@ -574,7 +722,7 @@ async def on_message(message):
                             timeout=MARKDOWN_TIMEOUT
                         )
                     except asyncio.TimeoutError:
-                        print(f"Markdown変換タイムアウト (e303): {attachment.url}")
+                        logger.info(f"Markdown変換タイムアウト (e303): {attachment.url}")
                         return None, text
         return None, text
 
@@ -585,7 +733,7 @@ async def on_message(message):
 
         urls = re.findall(GENERAL_URL_PATTERN, text)
         for url in urls:
-            if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+            if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                 continue
                 
             youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
@@ -602,7 +750,7 @@ async def on_message(message):
                         transcript_data = transcript.fetch()
                         return " ".join([item['text'] for item in transcript_data])
                     except Exception as e:
-                        print(f"YouTube字幕取得エラー (e311): {e}")
+                        logger.info(f"YouTube字幕取得エラー (e311): {e}")
                         return None
                         
                 try:
@@ -615,7 +763,7 @@ async def on_message(message):
                         clean_text += f"\n\n{transcript_text[:MAX_MARKDOWN_LENGTH]}"
                         return url, clean_text
                 except asyncio.TimeoutError:
-                    print(f"YouTube字幕取得タイムアウト (e312): {url}")
+                    logger.info(f"YouTube字幕取得タイムアウト (e312): {url}")
                 
                 continue
 
@@ -636,7 +784,7 @@ async def on_message(message):
                                         clean_text += f"\n\n{md_text}"
                                         return target_url, clean_text
                                 except Exception as e:
-                                    print(f"URLMarkdown変換エラー (e304): {e}")
+                                    logger.info(f"URLMarkdown変換エラー (e304): {e}")
                                 return None, target_text
                             
                             try:
@@ -645,11 +793,11 @@ async def on_message(message):
                                     timeout=MARKDOWN_TIMEOUT
                                 )
                             except asyncio.TimeoutError:
-                                print(f"URLMarkdown変換タイムアウト (e305): {url}")
+                                logger.info(f"URLMarkdown変換タイムアウト (e305): {url}")
                                 return None, text
                                 
             except Exception as e:
-                print(f"URLサイズ確認エラー (e306): {e}")
+                logger.info(f"URLサイズ確認エラー (e306): {e}")
                 continue
                 
         return None, text
@@ -660,13 +808,13 @@ async def on_message(message):
     prefix_mode = None
     if prompt.startswith('.ta '):
         prefix_mode = "TALK"
-        prompt = "." + prompt[4:]
+        prompt = prompt[4:]
     elif prompt.startswith('.tr '):
         prefix_mode = "TRANSLATE"
         prompt = "." + prompt[4:]
     elif prompt.startswith('.as '):
         prefix_mode = "ASSISTANT"
-        prompt = "." + prompt[4:]
+        prompt = prompt[4:]
 
     # 現在メッセージの画像取得
     target_image_url = await get_image_from_attachment(message)
@@ -746,7 +894,7 @@ async def on_message(message):
                     youtube_video_id = youtube_match.group(1)
                     break
 
-                if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                     continue
                 try:
                     async with aiohttp.ClientSession() as session:
@@ -780,7 +928,7 @@ async def on_message(message):
                             youtube_video_id = youtube_match.group(1)
                             break
 
-                        if not await is_valid_markdown_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                        if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
                             continue
                         try:
                             async with aiohttp.ClientSession() as session:
@@ -804,7 +952,7 @@ async def on_message(message):
                     transcript_data = transcript.fetch()
                     return " ".join([item['text'] for item in transcript_data])
                 except Exception as e:
-                    print(f"YouTube字幕取得エラー (e311): {e}")
+                    logger.info(f"YouTube字幕取得エラー (e311): {e}")
                     return None
 
             def convert_full_markdown(url):
@@ -814,7 +962,7 @@ async def on_message(message):
                     if result and result.text_content:
                         return result.text_content
                 except Exception as e:
-                    print(f"Markdown変換エラー (e307): {e}")
+                    logger.info(f"Markdown変換エラー (e307): {e}")
                 return None
 
             async with message.channel.typing():
@@ -843,7 +991,7 @@ async def on_message(message):
                         await message.reply("Markdown変換できません (e308)", delete_after=20.0)
                         return
                 except asyncio.TimeoutError:
-                    print(f"Markdown変換タイムアウト (e309): {target_url}")
+                    logger.info(f"Markdown変換タイムアウト (e309): {target_url}")
                     await message.reply("Markdown変換タイムアウト (e309)", delete_after=20.0)
                     return
         else:
@@ -927,7 +1075,7 @@ async def on_message(message):
                     current_msg = ref_msg
                     limit -= 1
                 except Exception as e:
-                    print(f"履歴取得エラー (e401): {e}")
+                    logger.info(f"履歴取得エラー (e401): {e}")
                     await message.reply("履歴取得エラー (e401)", delete_after=20.0)
                     break
             
@@ -960,7 +1108,7 @@ async def on_message(message):
                     timeout=REQUEST_TIMEOUT
                 )
             except Exception as e:
-                print(f"プライマリAPIエラー (e501): {e}")
+                logger.error(f"プライマリAPIエラー (e501): {e}")
                 response = await asyncio.wait_for(
                     secondary_ai_client.chat.completions.create(
                         model = current_secondary_model,
@@ -989,7 +1137,7 @@ async def on_message(message):
                 await message.reply(reply_text, allowed_mentions=MENTION_RESTRICTION)
                 
         except Exception as e:
-            print(f"リクエストエラー (e502): {e}")
+            logger.error(f"リクエストエラー (e502): {e}")
             await message.reply("リクエストエラー (e502)", delete_after=20.0)
 
 # 統計表示タスク
@@ -1005,8 +1153,7 @@ async def print_stats_loop():
         total_request_count = 0
         total_tokens = 0
         
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{now}] Requests: {current_reqs}, Tokens used: {current_tokens}")
+        logger.info(f"Requests: {current_reqs}, Tokens used: {current_tokens}")
 
 # クールダウン辞書クリーンアップタスク
 async def cleanup_cooldowns_loop():
@@ -1016,7 +1163,7 @@ async def cleanup_cooldowns_loop():
         user_cooldown.clear()
         user_request_count.clear()
 
-# ローカライズクラス
+# ローカライゼーション
 class CommandTranslator(app_commands.Translator):
     async def translate(self, string: app_commands.locale_str, locale: discord.Locale, context: app_commands.TranslationContext) -> str | None:
         if locale in (discord.Locale.american_english, discord.Locale.british_english):
@@ -1024,7 +1171,7 @@ class CommandTranslator(app_commands.Translator):
                 return "Displays help information for Madoka"
             elif string.message == "テキストを指定の言語に翻訳します":
                 return "Translate text into the specified language"
-            elif string.message == "翻訳先の言語 (例: jp, en)":
+            elif string.message == "翻訳先の言語 (例: ja, en)":
                 return "Target language (e.g., en, ja)"
             elif string.message == "翻訳するテキスト":
                 return "Text to translate"
@@ -1034,7 +1181,7 @@ class CommandTranslator(app_commands.Translator):
                 return "Affiche les informations d'aide pour Madoka"
             elif string.message == "テキストを指定の言語に翻訳します":
                 return "Traduit le texte dans la langue spécifiée"
-            elif string.message == "翻訳先の言語 (例: jp, en)":
+            elif string.message == "翻訳先の言語 (例: ja, en)":
                 return "Langue cible (ex: fr, ja)"
             elif string.message == "翻訳するテキスト":
                 return "Texte à traduire"
@@ -1044,7 +1191,7 @@ class CommandTranslator(app_commands.Translator):
                 return "Zeigt Hilfeinformationen für Madoka an"
             elif string.message == "テキストを指定の言語に翻訳します":
                 return "Übersetzt Text in die angegebene Sprache"
-            elif string.message == "翻訳先の言語 (例: jp, en)":
+            elif string.message == "翻訳先の言語 (例: ja, en)":
                 return "Zielsprache (z.B. de, ja)"
             elif string.message == "翻訳するテキスト":
                 return "Zu übersetzender Text"
@@ -1054,7 +1201,7 @@ class CommandTranslator(app_commands.Translator):
                 return "Madoka의 도움말 정보를 표시합니다"
             elif string.message == "テキストを指定の言語に翻訳します":
                 return "텍스트를 지정된 언어로 번역합니다"
-            elif string.message == "翻訳先の言語 (例: jp, en)":
+            elif string.message == "翻訳先の言語 (例: ja, en)":
                 return "번역할 언어 (예: ko, ja)"
             elif string.message == "翻訳するテキスト":
                 return "번역할 텍스트"
@@ -1064,7 +1211,7 @@ class CommandTranslator(app_commands.Translator):
                 return "顯示 Madoka 的幫助資訊"
             elif string.message == "テキストを指定の言語に翻訳します":
                 return "將文本翻譯成指定語言"
-            elif string.message == "翻訳先の言語 (例: jp, en)":
+            elif string.message == "翻訳先の言語 (例: ja, en)":
                 return "目標語言 (例: zht, ja)"
             elif string.message == "翻訳するテキスト":
                 return "要翻譯的文本"
