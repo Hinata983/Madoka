@@ -33,18 +33,17 @@ SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite-preview'
 SECONDARY_MODEL_ASSIS    = 'gemini-3-flash-preview'
 
 # 動作設定
+MAX_TOKENS                 = 4096     # APIの最大出力トークン数
 COOLDOWN_SECONDS           = 10       # ユーザーごとの連続送信制限秒数
 MAX_REQUESTS_PER_2H        = 90       # 2時間あたりの最大返信回数
 HISTORY_LIMIT_TALK         = 6        # トークモード時の会話履歴数
 HISTORY_LIMIT_TRANS        = 1        # 翻訳モード時の会話履歴数
 HISTORY_LIMIT_ASSIS        = 4        # アシスタントモード時の会話履歴数
-MAX_TOKENS                 = 4096     # APIの最大出力トークン数
 TEMPERATURE_TALK           = 0.9      # トークモードの温度
 TEMPERATURE_TRANS          = 0.5      # 翻訳モードの温度
 TEMPERATURE_ASSIS          = 0.7      # アシスタントモードの温度
 MAX_IMAGE_SIZE             = 10       # 画像最大サイズ
 MAX_MARKDOWN_SIZE          = 10       # Markdown最大サイズ
-MAX_MARKDOWN_LENGTH        = 2048     # Markdown最大文字数
 REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
 MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
 ENABLE_BOT_PROCESS         = True     # ボット返信スイッチ
@@ -53,13 +52,18 @@ ENABLE_URL_PROCESS         = False    # URL処理スイッチ
 ENABLE_MARKDOWN_PROCESS    = False    # Markdown処理スイッチ
 ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
 
-# 出力文字上限期待値
+# 入力文字数制限
+PROMPT_LENGTH_LIMIT      = int(MAX_TOKENS * 0.50)
+HISTORY_LENGTH_LIMIT     = int(MAX_TOKENS * 1.00)
+MARKDOWN_LENGTH_LIMIT    = int(MAX_TOKENS * 0.50)
+
+# 出力文字数上限期待値
 OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.10)
 OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
 OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.10)
 
 # 基本情報
-BOT_VERSION    = 'v1.13.3-202605B23'
+BOT_VERSION    = 'v1.13.8-202605B28'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
@@ -79,7 +83,7 @@ YOUTUBE_PROXY = 'socks5://username:password@ip_address:port'
 MENTION_RESTRICTION = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=True)
 
 # システムプロンプト設定（トークモード）
-SYSTEM_PROMPT = f"""出力文字上限：{OUTPUT_LENGTH_TALK}
+SYSTEM_PROMPT = f"""出力文字数上限：{OUTPUT_LENGTH_TALK}
 システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
@@ -97,7 +101,7 @@ SYSTEM_PROMPT = f"""出力文字上限：{OUTPUT_LENGTH_TALK}
 """
 
 # システムプロンプト設定（翻訳モード）
-SYSTEM_PROMPT_TRANS = f"""出力文字上限：{OUTPUT_LENGTH_TRANS}
+SYSTEM_PROMPT_TRANS = f"""出力文字数上限：{OUTPUT_LENGTH_TRANS}
 システム設定 (System)
 言語：ユーザーのプロンプトに順応
 機能：翻訳
@@ -106,7 +110,7 @@ SYSTEM_PROMPT_TRANS = f"""出力文字上限：{OUTPUT_LENGTH_TRANS}
 """
 
 # システムプロンプト設定（アシスタントモード）
-SYSTEM_PROMPT_ASSIS = f"""出力文字上限：{OUTPUT_LENGTH_ASSIS}
+SYSTEM_PROMPT_ASSIS = f"""出力文字数上限：{OUTPUT_LENGTH_ASSIS}
 システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
@@ -129,6 +133,11 @@ Secondary Model (Talk): {SECONDARY_MODEL_TALK}
 Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
 Secondary Model (Assis): {SECONDARY_MODEL_ASSIS}
 
+Max Tokens: {MAX_TOKENS}
+Prompt Length Limit: {PROMPT_LENGTH_LIMIT}
+History Length Limit: {HISTORY_LENGTH_LIMIT}
+Markdown Length Limit: {MARKDOWN_LENGTH_LIMIT}
+
 Cooldown: {COOLDOWN_SECONDS}
 Max Requests: {MAX_REQUESTS_PER_2H}
 
@@ -138,15 +147,12 @@ History Limit (Assis): {HISTORY_LIMIT_ASSIS}
 Output Length (Talk): {OUTPUT_LENGTH_TALK}
 Output Length (Trans): {OUTPUT_LENGTH_TRANS}
 Output Length (Assis): {OUTPUT_LENGTH_ASSIS}
-
-Max Tokens: {MAX_TOKENS}
 Temperature (Talk): {TEMPERATURE_TALK}
 Temperature (Trans): {TEMPERATURE_TRANS}
 Temperature (Assis): {TEMPERATURE_ASSIS}
 
 Max Image Size: {MAX_IMAGE_SIZE}
 Max Markdown Size: {MAX_MARKDOWN_SIZE}
-Max Markdown Length: {MAX_MARKDOWN_LENGTH}
 
 Request Timeout: {REQUEST_TIMEOUT}
 Markdown Timeout: {MARKDOWN_TIMEOUT}
@@ -393,7 +399,7 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
     user_cooldown[user_id] = current_time
 
     # ペイロード構築
-    prompt_with_lang = f".{lang} {text}"[:MAX_MARKDOWN_LENGTH]
+    prompt_with_lang = f".{lang} {text}"[:PROMPT_LENGTH_LIMIT]
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT_TRANS},
         {"role": "user", "content": prompt_with_lang}
@@ -449,7 +455,7 @@ async def on_ready():
 
 @discord_client.event
 async def on_message(message):
-    if message.author == discord_client.user:
+    if message.author.bot:
         return
 
     # メンションとリプライ判定
@@ -601,7 +607,8 @@ async def on_message(message):
                     '255.255.255.255/32',
                 )
                 v6_blocks = (
-                    '::/128', '::1/128',
+                    '::/128',
+                    '::1/128',
                     'fc00::/7',
                     'fe80::/10',
                     'ff00::/8',
@@ -709,7 +716,7 @@ async def on_message(message):
                             md = MarkItDown()
                             result = md.convert(target_url)
                             if result and result.text_content:
-                                md_text = result.text_content[:MAX_MARKDOWN_LENGTH]
+                                md_text = result.text_content[:MARKDOWN_LENGTH_LIMIT]
                                 clean_text = target_text + f"\n\n{md_text}"
                                 return target_url, clean_text
                         except Exception as e:
@@ -760,7 +767,7 @@ async def on_message(message):
                     )
                     if transcript_text:
                         clean_text = text.replace(url, '').strip()
-                        clean_text += f"\n\n{transcript_text[:MAX_MARKDOWN_LENGTH]}"
+                        clean_text += f"\n\n{transcript_text[:MARKDOWN_LENGTH_LIMIT]}"
                         return url, clean_text
                 except asyncio.TimeoutError:
                     logger.info(f"YouTube字幕取得タイムアウト (e312): {url}")
@@ -779,7 +786,7 @@ async def on_message(message):
                                     md = MarkItDown()
                                     result = md.convert(target_url)
                                     if result and result.text_content:
-                                        md_text = result.text_content[:MAX_MARKDOWN_LENGTH]
+                                        md_text = result.text_content[:MARKDOWN_LENGTH_LIMIT]
                                         clean_text = target_text.replace(target_url, '').strip()
                                         clean_text += f"\n\n{md_text}"
                                         return target_url, clean_text
@@ -804,6 +811,9 @@ async def on_message(message):
 
     prompt = message.content.replace(f'<@{discord_client.user.id}>', '').strip()
     
+    # ユーザーメッセージ文字数制限適用
+    prompt = prompt[:PROMPT_LENGTH_LIMIT]
+    
     # プレフィックスによるモード判定
     prefix_mode = None
     if prompt.startswith('.ta '):
@@ -815,6 +825,24 @@ async def on_message(message):
     elif prompt.startswith('.as '):
         prefix_mode = "ASSISTANT"
         prompt = prompt[4:]
+
+    # プレフィックスによるモード継続
+    if prefix_mode is None and message.reference and message.reference.message_id:
+        try:
+            ref_msg_1 = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+            
+            if ref_msg_1.reference and ref_msg_1.reference.message_id:
+                ref_msg_2 = ref_msg_1.reference.cached_message or await message.channel.fetch_message(ref_msg_1.reference.message_id)
+                ref_content_2 = ref_msg_2.content.replace(f'<@{discord_client.user.id}>', '').strip()
+                
+                if ref_content_2.startswith('.ta '):
+                    prefix_mode = "TALK"
+                elif ref_content_2.startswith('.as '):
+                    prefix_mode = "ASSISTANT"
+                elif ref_content_2.startswith('.tr '):
+                    return
+        except Exception:
+            pass
 
     # 現在メッセージの画像取得
     target_image_url = await get_image_from_attachment(message)
@@ -838,7 +866,7 @@ async def on_message(message):
                     prompt = cleaned_prompt
     
     # 空メッセージ判定
-    if (not prompt or prompt == "." or prompt == ".." or prompt == "?") and not target_image_url:
+    if (not prompt or not any(c.isalnum() for c in prompt)) and not target_image_url:
         await message.reply(HELP_INFORMATION, delete_after=20.0, allowed_mentions=MENTION_RESTRICTION)
         return
 
@@ -1036,6 +1064,7 @@ async def on_message(message):
             attachment_found = (target_image_url is not None) or (target_markdown_url is not None)
             
             # 文脈構築
+            current_history_chars = 0
             while current_msg.reference and current_msg.reference.message_id and limit > 0:
                 try:
                     ref_msg = current_msg.reference.cached_message or await message.channel.fetch_message(current_msg.reference.message_id)
@@ -1065,6 +1094,10 @@ async def on_message(message):
                         if hist_attachment_url:
                             attachment_found = True
                     
+                    if current_history_chars + len(clean_content) >= HISTORY_LENGTH_LIMIT:
+                        break
+                    current_history_chars += len(clean_content)
+
                     if clean_content or hist_attachment_url:
                         history.append({
                             "role": role, 
