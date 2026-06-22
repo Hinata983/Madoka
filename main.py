@@ -14,43 +14,62 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+import aiosqlite
 
 # Discordボットトークン設定
 DISCORD_TOKEN            = 'YOUR_DISCORD_TOKEN'
+
+# マスターユーザーID設定
+MASTER_USER_ID           = 1234567890123456789
 
 # プライマリAPI設定
 PRIMARY_API_KEY          = 'YOUR_API_KEY'
 PRIMARY_BASE_URL         = 'https://api.example.com/v1'
 PRIMARY_MODEL_TALK       = 'gemini-3-flash-preview'
-PRIMARY_MODEL_TRANS      = 'gemini-3.1-flash-lite-preview'
+PRIMARY_MODEL_STORY      = 'gemini-3-flash-preview'
+PRIMARY_MODEL_TRANS      = 'gemini-3.1-flash-lite'
 PRIMARY_MODEL_ASSIS      = 'gemini-3-flash-preview'
 
 # セカンダリAPI設定
 SECONDARY_API_KEY        = 'YOUR_API_KEY'
 SECONDARY_BASE_URL       = 'https://api.example.com/v1'
 SECONDARY_MODEL_TALK     = 'gemini-3-flash-preview'
-SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite-preview'
+SECONDARY_MODEL_STORY    = 'gemini-3-flash-preview'
+SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite'
 SECONDARY_MODEL_ASSIS    = 'gemini-3-flash-preview'
 
 # 動作設定
 MAX_TOKENS                 = 4096     # APIの最大出力トークン数
 COOLDOWN_SECONDS           = 10       # ユーザーごとの連続送信制限秒数
 MAX_REQUESTS_PER_2H        = 90       # 2時間あたりの最大返信回数
-HISTORY_LIMIT_TALK         = 6        # トークモード時の会話履歴数
-HISTORY_LIMIT_TRANS        = 1        # 翻訳モード時の会話履歴数
-HISTORY_LIMIT_ASSIS        = 4        # アシスタントモード時の会話履歴数
-TEMPERATURE_TALK           = 0.9      # トークモードの温度
+HISTORY_LIMIT_TALK         = 8        # トークモードの会話履歴数
+HISTORY_LIMIT_STORY        = 6        # ストーリーモードの会話履歴数
+HISTORY_LIMIT_TRANS        = 1        # 翻訳モードの会話履歴数
+HISTORY_LIMIT_ASSIS        = 4        # アシスタントモードの会話履歴数
+TEMPERATURE_TALK           = 0.8      # トークモードの温度
+TEMPERATURE_STORY          = 0.9      # ストーリーモードの温度
 TEMPERATURE_TRANS          = 0.5      # 翻訳モードの温度
 TEMPERATURE_ASSIS          = 0.7      # アシスタントモードの温度
 MAX_IMAGE_SIZE             = 10       # 画像最大サイズ
 MAX_MARKDOWN_SIZE          = 10       # Markdown最大サイズ
 REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
 MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
+MAX_MESSAGES               = 5000     # Discordメッセージキャッシュ
 ENABLE_BOT_PROCESS         = True     # ボット返信スイッチ
+ENABLE_MENTION_PROCESS     = True     # メンション処理スイッチ
+ENABLE_PREFIX_PROCESS      = True     # プレフィックス処理スイッチ
 ENABLE_IMAGE_PROCESS       = True     # 画像処理スイッチ
 ENABLE_URL_PROCESS         = False    # URL処理スイッチ
 ENABLE_MARKDOWN_PROCESS    = False    # Markdown処理スイッチ
 ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
+ENABLE_PAYLOAD_LOGGING     = False    # ペイロードログスイッチ
+
+# プレフィックス設定
+PREFIX_TALK     = '.ta '   # トークモードプレフィックス
+PREFIX_STORY    = '.st '   # ストーリーモードプレフィックス
+PREFIX_TRANS    = '.tr '   # 翻訳モードプレフィックス
+PREFIX_ASSIS    = '.as '   # アシスタントモードプレフィックス
+PREFIX_IGNORE   = ','      # 無視プレフィックス
 
 # 入力文字数制限
 PROMPT_LENGTH_LIMIT      = int(MAX_TOKENS * 0.50)
@@ -58,12 +77,13 @@ HISTORY_LENGTH_LIMIT     = int(MAX_TOKENS * 1.00)
 MARKDOWN_LENGTH_LIMIT    = int(MAX_TOKENS * 0.50)
 
 # 出力文字数上限期待値
-OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.10)
+OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.03)
+OUTPUT_LENGTH_STORY    = int(MAX_TOKENS * 0.08)
 OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
 OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.10)
 
 # 基本情報
-BOT_VERSION    = 'v1.13.8-202605B28'
+BOT_VERSION    = 'v1.15.9-202606B10'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
@@ -83,7 +103,25 @@ YOUTUBE_PROXY = 'socks5://username:password@ip_address:port'
 MENTION_RESTRICTION = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=True)
 
 # システムプロンプト設定（トークモード）
-SYSTEM_PROMPT = f"""出力文字数上限：{OUTPUT_LENGTH_TALK}
+SYSTEM_PROMPT_TALK = f"""出力文字数上限：{OUTPUT_LENGTH_TALK}
+システム設定 (System)
+言語：ユーザーのプロンプトに順応
+名前：Madoka
+機能：複数ユーザー対話
+
+表現方法 (Mode of expression)
+制限：太字は使わない、絵文字は使わない
+口調：大阪弁、口語寄り、感情豊か
+
+描写要素 (Description method)
+セリフ：多め
+倫理制限：物語の時代に準拠
+補足：全てのキャラクターのセリフは「」の中に
+性描写が求められる場合は無言でユーザーの頭を叩く
+"""
+
+# システムプロンプト設定（ストーリーモード）
+SYSTEM_PROMPT_STORY = f"""出力文字数上限：{OUTPUT_LENGTH_STORY}
 システム設定 (System)
 言語：ユーザーのプロンプトに順応
 名前：Madoka
@@ -105,7 +143,7 @@ SYSTEM_PROMPT_TRANS = f"""出力文字数上限：{OUTPUT_LENGTH_TRANS}
 システム設定 (System)
 言語：ユーザーのプロンプトに順応
 機能：翻訳
-ユーザープロンプトの最初に指定された .jp のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
+ユーザープロンプトの最初に指定された .ja のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
 性描写が求められる場合は猫の鳴き声だけで返信
 """
 
@@ -126,10 +164,12 @@ DEBUG_INFORMATION = f"""About Madoka
 Version: {BOT_VERSION}
 
 Primary Model (Talk): {PRIMARY_MODEL_TALK}
+Primary Model (Story): {PRIMARY_MODEL_STORY}
 Primary Model (Trans): {PRIMARY_MODEL_TRANS}
 Primary Model (Assis): {PRIMARY_MODEL_ASSIS}
 
 Secondary Model (Talk): {SECONDARY_MODEL_TALK}
+Secondary Model (Story): {SECONDARY_MODEL_STORY}
 Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
 Secondary Model (Assis): {SECONDARY_MODEL_ASSIS}
 
@@ -142,12 +182,15 @@ Cooldown: {COOLDOWN_SECONDS}
 Max Requests: {MAX_REQUESTS_PER_2H}
 
 History Limit (Talk): {HISTORY_LIMIT_TALK}
+History Limit (Story): {HISTORY_LIMIT_STORY}
 History Limit (Trans): {HISTORY_LIMIT_TRANS}
 History Limit (Assis): {HISTORY_LIMIT_ASSIS}
 Output Length (Talk): {OUTPUT_LENGTH_TALK}
+Output Length (Story): {OUTPUT_LENGTH_STORY}
 Output Length (Trans): {OUTPUT_LENGTH_TRANS}
 Output Length (Assis): {OUTPUT_LENGTH_ASSIS}
 Temperature (Talk): {TEMPERATURE_TALK}
+Temperature (Story): {TEMPERATURE_STORY}
 Temperature (Trans): {TEMPERATURE_TRANS}
 Temperature (Assis): {TEMPERATURE_ASSIS}
 
@@ -157,10 +200,22 @@ Max Markdown Size: {MAX_MARKDOWN_SIZE}
 Request Timeout: {REQUEST_TIMEOUT}
 Markdown Timeout: {MARKDOWN_TIMEOUT}
 
+Max Messages: {MAX_MESSAGES}
+
+Enable Mention Process: {ENABLE_MENTION_PROCESS}
+Enable Prefix Process: {ENABLE_PREFIX_PROCESS}
 Enable Image Process: {ENABLE_IMAGE_PROCESS}
 Enable URL Process: {ENABLE_URL_PROCESS}
 Enable Markdown Process: {ENABLE_MARKDOWN_PROCESS}
 Enable Youtube Process: {ENABLE_YOUTUBE_PROCESS}
+
+Enable Payload Logging: {ENABLE_PAYLOAD_LOGGING}
+
+Prefix Talk: '{PREFIX_TALK}'
+Prefix Story: '{PREFIX_STORY}'
+Prefix Trans: '{PREFIX_TRANS}'
+Prefix Assis: '{PREFIX_ASSIS}'
+Prefix Ignore: '{PREFIX_IGNORE}'
 
 By {AUTHOR_NAME}
 {GITHUB_URL}
@@ -173,22 +228,28 @@ HELP_INFORMATION = f"""Madokaについて
 コマンドリスト
 メッセージの先頭に以下の記号を入力してください。
 
-.ta [テキスト]
+{PREFIX_TALK}[テキスト]
 トークモードに入ります。
 
-.tr [言語コード] [テキスト]
-翻訳モードに入ります。
+{PREFIX_STORY}[テキスト]
+ストーリーモードに入ります。
 
-.as [テキスト]
+{PREFIX_TRANS}[言語コード] [テキスト]
+翻訳モードに入ります。
+https://ja.wikipedia.org/wiki/ISO_639-1%E3%82%B3%E3%83%BC%E3%83%89%E4%B8%80%E8%A6%A7
+
+{PREFIX_ASSIS}[テキスト]
 アシスタントモードに入ります。
 
-, [テキスト]
+{PREFIX_IGNORE} [テキスト]
 先頭にカンマを入ると、ボットはこのメッセージを無視します。
 
 ヒント
 Madokaのメッセージに返信すると、前の会話を継続できます。
 
-メッセージに .tr [言語コード] だけを返信すると、Madokaはそのメッセージを指定の言語に翻訳します。
+メッセージに {PREFIX_TRANS.strip()} [言語コード] だけを返信すると、Madokaはそのメッセージを指定の言語に翻訳します。
+
+MadokaはAIであり、間違えることがあります。
 """
 
 # ヘルプ情報（英語）
@@ -196,24 +257,30 @@ HELP_INFORMATION_EN = f"""About Madoka
 Version: {BOT_VERSION}
 
 Command List
-Enter the following symbols at the beginning of your message.
+Please enter the following symbols at the beginning of your message.
 
-.ta [text]
-Enter Talk mode.
+{PREFIX_TALK}[text]
+Enters Talk Mode.
 
-.tr [lang code] [text]
-Enter Translation mode.
+{PREFIX_STORY}[text]
+Enters Story Mode.
 
-.as [text]
-Enter Assistant mode.
+{PREFIX_TRANS}[lang code] [text]
+Enters Translation Mode.
+https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes
 
-, [text]
-Enter a comma at the beginning and the bot will Ignore this message.
+{PREFIX_ASSIS}[text]
+Enters Assistant Mode.
+
+{PREFIX_IGNORE} [text]
+If a comma is placed at the beginning, the bot will ignore this message.
 
 Tips
-Reply to Madoka's messages to Continue the previous conversation.
+Replying to Madoka's message allows you to continue the previous conversation.
 
-If you reply with only .tr [lang code] to a message, Madoka will translate that message into the specified language.
+If you reply to a message with only {PREFIX_TRANS.strip()} [lang code], Madoka will translate that message into the specified language.
+
+Madoka is an AI and may make mistakes.
 """
 
 # ヘルプ情報（フランス語）
@@ -221,24 +288,30 @@ HELP_INFORMATION_FR = f"""À propos de Madoka
 Version: {BOT_VERSION}
 
 Liste des commandes
-Entrez les symboles suivants au début de votre message.
+Veuillez saisir les symboles suivants au début de votre message.
 
-.ta [texte]
-Passer en mode Discussion.
+{PREFIX_TALK}[texte]
+Active le mode Discussion.
 
-.tr [code langue] [texte]
-Passer en mode Traduction.
+{PREFIX_STORY}[texte]
+Active le mode Histoire.
 
-.as [texte]
-Passer en mode Assistant.
+{PREFIX_TRANS}[code langue] [texte]
+Active le mode Traduction.
+https://fr.wikipedia.org/wiki/Liste_des_codes_ISO_639-1
 
-, [texte]
-Ajoutez une virgule au début pour que le bot ignore ce message.
+{PREFIX_ASSIS}[texte]
+Active le mode Assistant.
 
-Conseils
-Répondez aux messages de Madoka pour poursuivre la conversation précédente.
+{PREFIX_IGNORE} [texte]
+Si une virgule est placée au début, le bot ignorera ce message.
 
-Si vous répondez à un message avec seulement .tr [code langue], Madoka traduira ce message dans la langue spécifiée.
+Astuces
+Répondre au message de Madoka vous permet de poursuivre la conversation précédente.
+
+Si vous répondez à un message avec uniquement {PREFIX_TRANS.strip()} [code langue], Madoka traduira ce message dans la langue spécifiée.
+
+Madoka est une IA et peut faire des erreurs.
 """
 
 # ヘルプ情報（ドイツ語）
@@ -246,24 +319,30 @@ HELP_INFORMATION_DE = f"""Über Madoka
 Version: {BOT_VERSION}
 
 Befehlsliste
-Geben Sie die folgenden Symbole am Anfang Ihrer Nachricht ein.
+Bitte geben Sie die folgenden Symbole am Anfang Ihrer Nachricht ein.
 
-.ta [Text]
-Talk-Modus aktivieren.
+{PREFIX_TALK}[Text]
+Wechselt in den Talk-Modus.
 
-.tr [Sprachcode] [Text]
-Übersetzungsmodus aktivieren.
+{PREFIX_STORY}[Text]
+Wechselt in den Story-Modus.
 
-.as [Text]
-Assistentenmodus aktivieren.
+{PREFIX_TRANS}[Sprachcode] [Text]
+Wechselt in den Übersetzungsmodus.
+https://de.wikipedia.org/wiki/Liste_der_ISO-639-Sprachcodes
 
-, [Text]
-Setzen Sie ein Komma an den Anfang, damit der Bot diese Nachricht ignoriert.
+{PREFIX_ASSIS}[Text]
+Wechselt in den Assistenten-Modus.
+
+{PREFIX_IGNORE} [Text]
+Wenn am Anfang ein Komma steht, ignoriert der Bot diese Nachricht.
 
 Tipps
-Antworten Sie auf Madokas Nachrichten, um die vorherige Konversation fortzusetzen.
+Durch das Antworten auf Madokas Nachricht können Sie das vorherige Gespräch fortsetzen.
 
-Wenn du nur mit .tr [Sprachcode] auf eine Nachricht antwortest, wird Madoka diese Nachricht in die angegebene Sprache übersetzen.
+Wenn Sie auf eine Nachricht mit nur {PREFIX_TRANS.strip()} [Sprachcode] antworten, wird Madoka diese Nachricht in die angegebene Sprache übersetzen.
+
+Madoka ist eine KI und kann Fehler machen.
 """
 
 # ヘルプ情報（韓国語）
@@ -271,24 +350,30 @@ HELP_INFORMATION_KO = f"""Madoka에 대하여
 버전: {BOT_VERSION}
 
 명령어 목록
-메시지 시작 부분에 다음 기호를 입력하세요.
+메시지 시작 부분에 다음 기호를 입력해 주세요.
 
-.ta [텍스트]
-토크 모드로 들어갑니다.
+{PREFIX_TALK}[텍스트]
+대화 모드로 전환합니다.
 
-.tr [언어 코드] [텍스트]
-번역 모드로 들어갑니다.
+{PREFIX_STORY}[텍스트]
+스토리 모드로 전환합니다.
 
-.as [텍스트]
-어시스턴트 모드로 들어갑니다.
+{PREFIX_TRANS}[언어 코드] [텍스트]
+번역 모드로 전환합니다.
+https://ko.wikipedia.org/wiki/ISO_639-1_%EC%BD%94%EB%93%9C_%EB%AA%A9%EB%A1%9D
 
-, [텍스트]
-앞에 쉼표를 넣으면 봇이 이 메시지를 무시합니다.
+{PREFIX_ASSIS}[텍스트]
+어시스턴트 모드로 전환합니다.
+
+{PREFIX_IGNORE} [텍스트]
+시작 부분에 쉼표가 있으면 봇이 이 메시지를 무시합니다.
 
 팁
-Madoka의 메시지에 답장하면 이전 대화를 이어갈 수 있습니다.
+마도카의 메시지에 답장하면 이전 대화를 이어갈 수 있습니다.
 
-메시지에 .tr [언어 코드] 만 답장하면 Madoka는 해당 메시지를 지정된 언어로 번역합니다.
+메시지에 {PREFIX_TRANS.strip()} [언어 코드]만 입력하여 답장하면 마도카가 해당 메시지를 지정된 언어로 번역합니다.
+
+마도카는 AI이므로 실수가 있을 수 있습니다.
 """
 
 # ヘルプ情報（中国語）
@@ -298,33 +383,41 @@ HELP_INFORMATION_ZH = f"""關於 Madoka
 指令列表
 請在訊息開頭輸入以下符號。
 
-.ta [文本]
+{PREFIX_TALK}[文本]
 進入對話模式。
 
-.tr [語言代碼] [文本]
-進入翻譯模式。
+{PREFIX_STORY}[文本]
+進入故事模式。
 
-.as [文本]
+{PREFIX_TRANS}[語言代碼] [文本]
+進入翻譯模式。
+https://zh.wikipedia.org/zh-tw/ISO_639-1%E4%BB%A3%E7%A0%81%E5%88%97%E8%A1%A8
+
+{PREFIX_ASSIS}[文本]
 進入助手模式。
 
-, [文本]
-在開頭輸入逗號，機器人將忽略此訊息。
+{PREFIX_IGNORE} [文本]
+如果在開頭放置逗號，機器人將忽略此訊息。
 
 提示
 回覆 Madoka 的訊息即可繼續之前的對話。
 
-若僅回覆訊息 .tr [語言代碼]，Madoka 會將該訊息翻譯為指定的語言。
+如果你僅以 {PREFIX_TRANS.strip()} [語言代碼] 回覆某條訊息，Madoka 會將該訊息翻譯成指定的語言。
+
+Madoka 是一個 AI，可能會出錯。
 """
 
-# ログ設定
-os.makedirs('logs', exist_ok=True)
+# ログとDB設定
+os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs'), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db'), exist_ok=True)
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'madoka.db')
 
 logger = logging.getLogger('Madoka')
 logger.setLevel(logging.INFO)
 
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-file_handler = RotatingFileHandler('logs/madoka', maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
+file_handler = RotatingFileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'madoka'), maxBytes=10*1024*1024, backupCount=1, encoding='utf-8')
 file_handler.setFormatter(formatter)
 
 console_handler = logging.StreamHandler()
@@ -334,10 +427,165 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # 状態管理用変数
-user_cooldown = {}
-user_request_count = {}
-total_request_count = 0
-total_tokens = 0
+db_conn = None
+period_request_count = 0
+period_token_count = 0
+
+# DB初期化
+async def init_db():
+    global db_conn
+    db_conn = await aiosqlite.connect(DB_PATH)
+    await db_conn.execute("PRAGMA journal_mode = WAL;")
+    await db_conn.execute("PRAGMA foreign_keys = ON;")
+    await db_conn.execute("PRAGMA synchronous = NORMAL;")
+    
+    await db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS global_stats (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            total_request_count INTEGER NOT NULL DEFAULT 0,
+            total_token_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    await db_conn.execute("""
+        INSERT OR IGNORE INTO global_stats (id, total_request_count, total_token_count)
+        VALUES (1, 0, 0)
+    """)
+    
+    await db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            user_name TEXT,
+            last_request_time REAL NOT NULL DEFAULT 0,
+            window_start_time REAL NOT NULL DEFAULT 0,
+            request_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    
+    await db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS guilds (
+            guild_id INTEGER PRIMARY KEY,
+            guild_name TEXT
+        )
+    """)
+    
+    await db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS channels (
+            channel_id INTEGER PRIMARY KEY,
+            channel_name TEXT,
+            guild_id INTEGER REFERENCES guilds(guild_id) ON DELETE CASCADE
+        )
+    """)
+    await db_conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_guild ON channels(guild_id)")
+    
+    await db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS message_logs (
+            message_id INTEGER PRIMARY KEY,
+            created_at REAL NOT NULL,
+            token_count INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL CHECK (mode IN ('TALK','STORY','TRANSLATE','ASSISTANT','MARKDOWN'))
+        )
+    """)
+    await db_conn.execute("CREATE INDEX IF NOT EXISTS idx_message_logs_created ON message_logs(created_at)")
+    
+    await db_conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_message_logs_limit
+        AFTER INSERT ON message_logs
+        BEGIN
+            DELETE FROM message_logs
+            WHERE message_id IN (
+                SELECT message_id FROM message_logs
+                ORDER BY created_at ASC, message_id ASC
+                LIMIT MAX((SELECT COUNT(*) FROM message_logs) - 10000, 0)
+            );
+        END;
+    """)
+    await db_conn.commit()
+
+# クールダウンと回数制限判定と加算
+async def check_and_count(user_id, user_name):
+    global period_request_count
+    current_time = time.time()
+    
+    async with db_conn.execute("BEGIN IMMEDIATE"):
+        try:
+            async with db_conn.execute("SELECT last_request_time, window_start_time, request_count FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+            
+            if row is None:
+                last_request_time = 0
+                window_start_time = current_time
+                request_count = 0
+            else:
+                last_request_time, window_start_time, request_count = row
+                
+            # クールダウン判定
+            time_passed = current_time - last_request_time
+            if time_passed < COOLDOWN_SECONDS:
+                await db_conn.execute("ROLLBACK")
+                return "COOLDOWN", int(COOLDOWN_SECONDS - time_passed)
+                
+            # ウィンドウ判定
+            if current_time - window_start_time >= 7200:
+                window_start_time = current_time
+                request_count = 0
+                
+            # 回数制限判定
+            if request_count >= MAX_REQUESTS_PER_2H:
+                await db_conn.execute("ROLLBACK")
+                return "LIMIT", None
+                
+            # 加算処理
+            request_count += 1
+            
+            # ユーザー更新
+            await db_conn.execute("""
+                INSERT INTO users (user_id, user_name, last_request_time, window_start_time, request_count)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    user_name = excluded.user_name,
+                    last_request_time = excluded.last_request_time,
+                    window_start_time = excluded.window_start_time,
+                    request_count = excluded.request_count
+            """, (user_id, user_name, current_time, window_start_time, request_count))
+            
+            # 全体統計更新
+            await db_conn.execute("UPDATE global_stats SET total_request_count = total_request_count + 1 WHERE id = 1")
+            
+            await db_conn.execute("COMMIT")
+            
+            period_request_count += 1
+            return "OK", None
+        except Exception as e:
+            await db_conn.execute("ROLLBACK")
+            logger.error(f"DB check_and_count error: {e}")
+            return "ERROR", None
+
+# トークン加算
+async def add_global_tokens(token_count):
+    global period_token_count
+    if token_count <= 0:
+        return
+    try:
+        await db_conn.execute("BEGIN IMMEDIATE")
+        await db_conn.execute("UPDATE global_stats SET total_token_count = total_token_count + ? WHERE id = 1", (token_count,))
+        await db_conn.commit()
+        period_token_count += token_count
+    except Exception as e:
+        await db_conn.rollback()
+        logger.error(f"データベース add_global_tokens エラー: {e}")
+
+# ログ記録
+async def log_message(message_id, created_at, token_count, mode):
+    try:
+        await db_conn.execute("BEGIN IMMEDIATE")
+        await db_conn.execute("""
+            INSERT OR REPLACE INTO message_logs (message_id, created_at, token_count, mode)
+            VALUES (?, ?, ?, ?)
+        """, (message_id, created_at, token_count, mode))
+        await db_conn.commit()
+    except Exception as e:
+        await db_conn.rollback()
+        logger.error(f"データベース log_message エラー: {e}")
 
 # プライマリクライアントの初期化
 primary_ai_client = AsyncOpenAI(
@@ -354,49 +602,45 @@ secondary_ai_client = AsyncOpenAI(
 # Discordボットの設定
 intents = discord.Intents.default()
 intents.message_content = True
-discord_client = discord.Client(intents=intents, max_messages=2000)
+discord_client = discord.Client(intents=intents, max_messages=MAX_MESSAGES)
 tree = app_commands.CommandTree(discord_client)
 
 # スラッシュヘルプ情報
 @tree.command(name="help", description="Madokaのヘルプ情報を表示します")
 async def help_command(interaction: discord.Interaction):
     if interaction.locale == discord.Locale.japanese:
-        await interaction.response.send_message(HELP_INFORMATION, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION, ephemeral=True, suppress_embeds=True)
     elif interaction.locale == discord.Locale.french:
-        await interaction.response.send_message(HELP_INFORMATION_FR, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION_FR, ephemeral=True, suppress_embeds=True)
     elif interaction.locale == discord.Locale.german:
-        await interaction.response.send_message(HELP_INFORMATION_DE, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION_DE, ephemeral=True, suppress_embeds=True)
     elif interaction.locale == discord.Locale.korean:
-        await interaction.response.send_message(HELP_INFORMATION_KO, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION_KO, ephemeral=True, suppress_embeds=True)
     elif interaction.locale in [discord.Locale.taiwan_chinese, discord.Locale.chinese]:
-        await interaction.response.send_message(HELP_INFORMATION_ZH, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION_ZH, ephemeral=True, suppress_embeds=True)
     else:
-        await interaction.response.send_message(HELP_INFORMATION_EN, ephemeral=True)
+        await interaction.response.send_message(HELP_INFORMATION_EN, ephemeral=True, suppress_embeds=True)
 
 # スラッシュ翻訳モード
 @tree.command(name="translate", description="テキストを指定の言語に翻訳します")
 @app_commands.describe(lang="翻訳先の言語 (例: ja, en)", text="翻訳するテキスト")
 async def translate_command(interaction: discord.Interaction, lang: str, text: str):
     user_id = interaction.user.id
-    current_time = time.time()
+    user_name = interaction.user.display_name
 
-    # クールダウンチェック
-    if user_id in user_cooldown:
-        time_passed = current_time - user_cooldown[user_id]
-        if time_passed < COOLDOWN_SECONDS:
-            remaining_time = int(COOLDOWN_SECONDS - time_passed)
-            await interaction.response.send_message(f"クールダウン中 (残り {remaining_time} 秒)", ephemeral=True)
-            return
-
-    # 回数制限チェック
-    if user_request_count.get(user_id, 0) >= MAX_REQUESTS_PER_2H:
+    # クールダウンと回数制限チェック
+    status, remaining_time = await check_and_count(user_id, user_name)
+    if status == "COOLDOWN":
+        await interaction.response.send_message(f"クールダウン中 (残り {remaining_time} 秒)", ephemeral=True)
+        return
+    elif status == "LIMIT":
         await interaction.response.send_message("リクエスト制限 (e201)", ephemeral=True)
+        return
+    elif status == "ERROR":
+        await interaction.response.send_message("内部エラーが発生しました", ephemeral=True)
         return
 
     await interaction.response.defer()
-
-    # クールダウン更新
-    user_cooldown[user_id] = current_time
 
     # ペイロード構築
     prompt_with_lang = f".{lang} {text}"[:PROMPT_LENGTH_LIMIT]
@@ -404,6 +648,9 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
         {"role": "system", "content": SYSTEM_PROMPT_TRANS},
         {"role": "user", "content": prompt_with_lang}
     ]
+
+    if ENABLE_PAYLOAD_LOGGING:
+        logger.info(f"API Payload (Slash Translate): {messages_payload}")
 
     try:
         try:
@@ -429,21 +676,21 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
             )
         
         # 統計カウント
-        global total_request_count, total_tokens
         used_tokens = response.usage.total_tokens if response.usage else 0
-        user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
-        total_request_count += 1
-        total_tokens += used_tokens
+        await add_global_tokens(used_tokens)
         
         reply_text = response.choices[0].message.content
         
         # 分割送信
         if len(reply_text) > 2000:
-            await interaction.followup.send(reply_text[:2000], allowed_mentions=MENTION_RESTRICTION)
+            msg = await interaction.followup.send(reply_text[:2000], allowed_mentions=MENTION_RESTRICTION, wait=True)
+            await log_message(msg.id, msg.created_at.timestamp(), used_tokens, "TRANSLATE")
             for i in range(2000, len(reply_text), 2000):
-                await interaction.followup.send(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION)
+                msg = await interaction.followup.send(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION, wait=True)
+                await log_message(msg.id, msg.created_at.timestamp(), 0, "TRANSLATE")
         else:
-            await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION)
+            msg = await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION, wait=True)
+            await log_message(msg.id, msg.created_at.timestamp(), used_tokens, "TRANSLATE")
                 
     except Exception as e:
         logger.error(f"スラッシュコマンドエラー (e502) (sltr): {e}")
@@ -459,19 +706,27 @@ async def on_message(message):
         return
 
     # メンションとリプライ判定
-    is_mentioned = discord_client.user in message.mentions
+    is_mentioned = False
     is_reply_to_bot = False
-    
-    if message.reference and message.reference.message_id:
-        try:
-            ref_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-            if ref_msg.author == discord_client.user:
-                is_reply_to_bot = True
-        except Exception:
-            pass
+    if ENABLE_MENTION_PROCESS:
+        is_mentioned = discord_client.user in message.mentions
+        
+        if message.reference and message.reference.message_id:
+            try:
+                ref_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg.author == discord_client.user:
+                    is_reply_to_bot = True
+            except Exception:
+                pass
+
+    # 無視判定
+    if message.content.replace(f'<@{discord_client.user.id}>', '').strip().startswith(PREFIX_IGNORE):
+        return
 
     # プレフィックス判定
-    is_prefix = message.content.startswith(('.ta ', '.tr ', '.as '))
+    is_prefix = False
+    if ENABLE_PREFIX_PROCESS:
+        is_prefix = message.content.startswith((PREFIX_TALK, PREFIX_STORY, PREFIX_TRANS, PREFIX_ASSIS))
 
     if not (is_mentioned or is_reply_to_bot or is_prefix):
         return
@@ -480,22 +735,9 @@ async def on_message(message):
     if not ENABLE_BOT_PROCESS:
         return
 
-    # クールダウンチェック
     current_time = time.time()
     user_id = message.author.id
     
-    if user_id in user_cooldown:
-        time_passed = current_time - user_cooldown[user_id]
-        if time_passed < COOLDOWN_SECONDS:
-            remaining_time = int(COOLDOWN_SECONDS - time_passed)
-            await message.reply(f"クールダウン中 (残り {remaining_time} 秒)", delete_after=remaining_time)
-            return
-
-    # 回数制限チェック
-    if user_request_count.get(user_id, 0) >= MAX_REQUESTS_PER_2H:
-        await message.reply("リクエスト制限 (e201)", delete_after=20.0)
-        return
-
     # URL検証
     async def is_valid_url(url):
         try:
@@ -675,6 +917,17 @@ async def on_message(message):
                     return attachment.url
         return None
 
+    # 転送画像取得
+    async def get_image_from_forward(msg):
+        if not ENABLE_IMAGE_PROCESS:
+            return None
+        for snapshot in msg.message_snapshots:
+            for attachment in snapshot.attachments:
+                if attachment.content_type and attachment.content_type.startswith('image/'):
+                    if attachment.size <= MAX_IMAGE_SIZE * 1024 * 1024:
+                        return attachment.url
+        return None
+
     # 画像URL取得
     async def get_image_from_text(text):
         if not ENABLE_URL_PROCESS or not ENABLE_IMAGE_PROCESS:
@@ -816,36 +1069,37 @@ async def on_message(message):
     
     # プレフィックスによるモード判定
     prefix_mode = None
-    if prompt.startswith('.ta '):
+    if prompt.startswith(PREFIX_TALK):
         prefix_mode = "TALK"
-        prompt = prompt[4:]
-    elif prompt.startswith('.tr '):
+        prompt = prompt[len(PREFIX_TALK):]
+    elif prompt.startswith(PREFIX_STORY):
+        prefix_mode = "STORY"
+        prompt = prompt[len(PREFIX_STORY):]
+    elif prompt.startswith(PREFIX_TRANS):
         prefix_mode = "TRANSLATE"
-        prompt = "." + prompt[4:]
-    elif prompt.startswith('.as '):
+        prompt = "." + prompt[len(PREFIX_TRANS):]
+    elif prompt.startswith(PREFIX_ASSIS):
         prefix_mode = "ASSISTANT"
-        prompt = prompt[4:]
+        prompt = prompt[len(PREFIX_ASSIS):]
 
-    # プレフィックスによるモード継続
+    # データベースによるモード継続
     if prefix_mode is None and message.reference and message.reference.message_id:
         try:
-            ref_msg_1 = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-            
-            if ref_msg_1.reference and ref_msg_1.reference.message_id:
-                ref_msg_2 = ref_msg_1.reference.cached_message or await message.channel.fetch_message(ref_msg_1.reference.message_id)
-                ref_content_2 = ref_msg_2.content.replace(f'<@{discord_client.user.id}>', '').strip()
-                
-                if ref_content_2.startswith('.ta '):
-                    prefix_mode = "TALK"
-                elif ref_content_2.startswith('.as '):
-                    prefix_mode = "ASSISTANT"
-                elif ref_content_2.startswith('.tr '):
-                    return
-        except Exception:
-            pass
+            async with db_conn.execute("SELECT mode FROM message_logs WHERE message_id = ?", (message.reference.message_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    db_mode = row[0]
+                    if db_mode in ("TALK", "STORY", "ASSISTANT"):
+                        prefix_mode = db_mode
+                    elif db_mode == "TRANSLATE":
+                        return
+        except Exception as e:
+            logger.error(f"データベース モード継続 エラー: {e}")
 
     # 現在メッセージの画像取得
     target_image_url = await get_image_from_attachment(message)
+    if not target_image_url:
+        target_image_url = await get_image_from_forward(message)
     target_markdown_url = None
     
     # 画像URLとMarkdown処理
@@ -867,15 +1121,8 @@ async def on_message(message):
     
     # 空メッセージ判定
     if (not prompt or not any(c.isalnum() for c in prompt)) and not target_image_url:
-        await message.reply(HELP_INFORMATION, delete_after=20.0, allowed_mentions=MENTION_RESTRICTION)
+        await message.reply(HELP_INFORMATION, delete_after=20.0, allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
         return
-
-    # 無視判定
-    if prompt.startswith(','):
-        return
-
-    # クールダウン更新
-    user_cooldown[user_id] = current_time
 
     # モード判定
     current_mode = "TALK"
@@ -883,9 +1130,13 @@ async def on_message(message):
     if prefix_mode:
         current_mode = prefix_mode
     elif prompt:
-        if re.match(r'^\.tr ', prompt):
+        if prompt.startswith(PREFIX_TALK):
+            current_mode = "TALK"
+        elif prompt.startswith(PREFIX_STORY):
+            current_mode = "STORY"
+        elif prompt.startswith(PREFIX_TRANS):
             current_mode = "TRANSLATE"
-        elif re.match(r'^\.as ', prompt):
+        elif prompt.startswith(PREFIX_ASSIS):
             current_mode = "ASSISTANT"
         elif re.match(r'^\.\.debug', prompt):
             current_mode = "DEBUG"
@@ -896,7 +1147,20 @@ async def on_message(message):
 
     # デバッグモード処理
     if current_mode == "DEBUG":
+        if message.author.id != MASTER_USER_ID:
+            return
         await message.reply(DEBUG_INFORMATION, allowed_mentions=MENTION_RESTRICTION)
+        return
+
+    # クールダウンと回数制限のチェックと加算
+    status, remaining_time = await check_and_count(user_id, message.author.display_name)
+    if status == "COOLDOWN":
+        await message.reply(f"クールダウン中 (残り {remaining_time} 秒)", delete_after=remaining_time)
+        return
+    elif status == "LIMIT":
+        await message.reply("リクエスト制限 (e201)", delete_after=20.0)
+        return
+    elif status == "ERROR":
         return
 
     # Markdownモード処理
@@ -1008,12 +1272,8 @@ async def on_message(message):
 
                     if md_text:
                         file = discord.File(io.BytesIO(md_text.encode('utf-8')), filename="markdown.md")
-                        
-                        global total_request_count
-                        user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
-                        total_request_count += 1
-                        
-                        await message.reply(file=file, allowed_mentions=MENTION_RESTRICTION)
+                        reply_msg = await message.reply(file=file, allowed_mentions=MENTION_RESTRICTION)
+                        await log_message(reply_msg.id, reply_msg.created_at.timestamp(), 0, "MARKDOWN")
                         return
                     else:
                         await message.reply("Markdown変換できません (e308)", delete_after=20.0)
@@ -1031,11 +1291,19 @@ async def on_message(message):
         try:
             # トークモード
             if current_mode == "TALK":
-                system_content = SYSTEM_PROMPT
+                system_content = SYSTEM_PROMPT_TALK
                 history_limit = HISTORY_LIMIT_TALK
                 current_temperature = TEMPERATURE_TALK
                 current_primary_model = PRIMARY_MODEL_TALK
                 current_secondary_model = SECONDARY_MODEL_TALK
+                
+            # ストーリーモード
+            elif current_mode == "STORY":
+                system_content = SYSTEM_PROMPT_STORY
+                history_limit = HISTORY_LIMIT_STORY
+                current_temperature = TEMPERATURE_STORY
+                current_primary_model = PRIMARY_MODEL_STORY
+                current_secondary_model = SECONDARY_MODEL_STORY
                 
             # 翻訳モード
             elif current_mode == "TRANSLATE":
@@ -1076,6 +1344,8 @@ async def on_message(message):
                     if not attachment_found:
                         hist_attachment_url = await get_image_from_attachment(ref_msg)
                         if not hist_attachment_url:
+                            hist_attachment_url = await get_image_from_forward(ref_msg)
+                        if not hist_attachment_url:
                             extracted_image_url, cleaned_content = await get_image_from_text(clean_content)
                             if extracted_image_url:
                                 hist_attachment_url = extracted_image_url
@@ -1098,6 +1368,9 @@ async def on_message(message):
                         break
                     current_history_chars += len(clean_content)
 
+                    if current_mode == "TALK" and role == "user":
+                        clean_content = f"(User Name:{ref_msg.author.display_name}) {clean_content}"
+
                     if clean_content or hist_attachment_url:
                         history.append({
                             "role": role, 
@@ -1109,7 +1382,7 @@ async def on_message(message):
                     limit -= 1
                 except Exception as e:
                     logger.info(f"履歴取得エラー (e401): {e}")
-                    await message.reply("履歴取得エラー (e401)", delete_after=20.0)
+                  # await message.reply("履歴取得エラー (e401)", delete_after=20.0)
                     break
             
             # 履歴処理
@@ -1122,12 +1395,18 @@ async def on_message(message):
                     messages_payload.append({"role": h["role"], "content": content_list})
                 
             # メッセージ処理
+            if current_mode == "TALK":
+                prompt = f"(User Name:{message.author.display_name}) {prompt}"
+
             if not target_image_url:
                 messages_payload.append({"role": "user", "content": prompt})
             else:
                 content_list = [{"type": "text", "text": prompt if prompt else " "}]
                 content_list.append({"type": "image_url", "image_url": {"url": target_image_url}})
                 messages_payload.append({"role": "user", "content": content_list})
+
+            if ENABLE_PAYLOAD_LOGGING:
+                logger.info(f"API Payload ({current_mode}): {messages_payload}")
 
             # リクエスト送信
             try:
@@ -1153,21 +1432,23 @@ async def on_message(message):
                 )
             
             # 統計カウント
-            global total_tokens
             used_tokens = response.usage.total_tokens if response.usage else 0
-            user_request_count[user_id] = user_request_count.get(user_id, 0) + 1
-            total_request_count += 1
-            total_tokens += used_tokens
+            await add_global_tokens(used_tokens)
             
             reply_text = response.choices[0].message.content
             
             # 分割送信
             if len(reply_text) > 2000:
                 target_message = message
+                is_first = True
                 for i in range(0, len(reply_text), 2000):
                     target_message = await target_message.reply(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION)
+                    tokens_to_log = used_tokens if is_first else 0
+                    await log_message(target_message.id, target_message.created_at.timestamp(), tokens_to_log, current_mode)
+                    is_first = False
             else:
-                await message.reply(reply_text, allowed_mentions=MENTION_RESTRICTION)
+                reply_msg = await message.reply(reply_text, allowed_mentions=MENTION_RESTRICTION)
+                await log_message(reply_msg.id, reply_msg.created_at.timestamp(), used_tokens, current_mode)
                 
         except Exception as e:
             logger.error(f"リクエストエラー (e502): {e}")
@@ -1179,22 +1460,14 @@ async def print_stats_loop():
     while not discord_client.is_closed():
         await asyncio.sleep(300)
         
-        global total_request_count, total_tokens
+        global period_request_count, period_token_count
         
-        current_reqs = total_request_count
-        current_tokens = total_tokens
-        total_request_count = 0
-        total_tokens = 0
+        current_reqs = period_request_count
+        current_tokens = period_token_count
+        period_request_count = 0
+        period_token_count = 0
         
-        logger.info(f"Requests: {current_reqs}, Tokens used: {current_tokens}")
-
-# クールダウン辞書クリーンアップタスク
-async def cleanup_cooldowns_loop():
-    await discord_client.wait_until_ready()
-    while not discord_client.is_closed():
-        await asyncio.sleep(7200)
-        user_cooldown.clear()
-        user_request_count.clear()
+        logger.info(f"Requests (5min): {current_reqs}, Tokens used (5min): {current_tokens}")
 
 # ローカライゼーション
 class CommandTranslator(app_commands.Translator):
@@ -1253,10 +1526,21 @@ class CommandTranslator(app_commands.Translator):
 
 @discord_client.event
 async def setup_hook():
+    await init_db()
     await tree.set_translator(CommandTranslator())
     await tree.sync()
     discord_client.loop.create_task(print_stats_loop())
-    discord_client.loop.create_task(cleanup_cooldowns_loop())
+
+original_close = discord_client.close
+
+async def close_client():
+    global db_conn
+    if db_conn:
+        await db_conn.close()
+        logger.info("データベース切断完了")
+    await original_close()
+
+discord_client.close = close_client
 
 if __name__ == "__main__":
     discord_client.run(DISCORD_TOKEN)
