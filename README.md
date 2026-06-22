@@ -1,4 +1,4 @@
-テキトーな説明を作った
+リファクタリング予定あり、その前にReadmeを書き直す予定なし。
 
 # Simple discord AI chat bot "Madoka"
 
