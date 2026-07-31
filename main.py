@@ -27,49 +27,53 @@ PRIMARY_API_KEY          = 'YOUR_API_KEY'
 PRIMARY_BASE_URL         = 'https://api.example.com/v1'
 PRIMARY_MODEL_TALK       = 'gemini-3-flash-preview'
 PRIMARY_MODEL_STORY      = 'gemini-3-flash-preview'
-PRIMARY_MODEL_TRANS      = 'gemini-3.1-flash-lite'
 PRIMARY_MODEL_ASSIS      = 'gemini-3-flash-preview'
+PRIMARY_MODEL_TRANS      = 'gemini-3.1-flash-lite'
 
 # セカンダリAPI設定
 SECONDARY_API_KEY        = 'YOUR_API_KEY'
 SECONDARY_BASE_URL       = 'https://api.example.com/v1'
 SECONDARY_MODEL_TALK     = 'gemini-3-flash-preview'
 SECONDARY_MODEL_STORY    = 'gemini-3-flash-preview'
-SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite'
 SECONDARY_MODEL_ASSIS    = 'gemini-3-flash-preview'
+SECONDARY_MODEL_TRANS    = 'gemini-3.1-flash-lite'
 
 # 動作設定
 MAX_TOKENS                 = 4096     # APIの最大出力トークン数
 COOLDOWN_SECONDS           = 10       # ユーザーごとの連続送信制限秒数
-MAX_REQUESTS_PER_2H        = 90       # 2時間あたりの最大返信回数
+MAX_REQUESTS               = 60       # ウィンドウ時間内の最大返信回数
+REQUEST_WINDOW_SECONDS     = 7200     # 返信回数リミットウィンドウ時間
 HISTORY_LIMIT_TALK         = 8        # トークモードの会話履歴数
 HISTORY_LIMIT_STORY        = 6        # ストーリーモードの会話履歴数
-HISTORY_LIMIT_TRANS        = 1        # 翻訳モードの会話履歴数
 HISTORY_LIMIT_ASSIS        = 4        # アシスタントモードの会話履歴数
+HISTORY_LIMIT_TRANS        = 1        # 翻訳モードの会話履歴数
 TEMPERATURE_TALK           = 0.8      # トークモードの温度
 TEMPERATURE_STORY          = 0.9      # ストーリーモードの温度
-TEMPERATURE_TRANS          = 0.5      # 翻訳モードの温度
 TEMPERATURE_ASSIS          = 0.7      # アシスタントモードの温度
+TEMPERATURE_TRANS          = 0.5      # 翻訳モードの温度
 MAX_IMAGE_SIZE             = 10       # 画像最大サイズ
 MAX_MARKDOWN_SIZE          = 10       # Markdown最大サイズ
 REQUEST_TIMEOUT            = 50.0     # APIリクエストタイムアウト
 MARKDOWN_TIMEOUT           = 50.0     # Markdown変換タイムアウト
 MAX_MESSAGES               = 5000     # Discordメッセージキャッシュ
-ENABLE_BOT_PROCESS         = True     # ボット返信スイッチ
-ENABLE_MENTION_PROCESS     = True     # メンション処理スイッチ
-ENABLE_PREFIX_PROCESS      = True     # プレフィックス処理スイッチ
-ENABLE_IMAGE_PROCESS       = True     # 画像処理スイッチ
-ENABLE_URL_PROCESS         = False    # URL処理スイッチ
-ENABLE_MARKDOWN_PROCESS    = False    # Markdown処理スイッチ
-ENABLE_YOUTUBE_PROCESS     = False    # Youtube字幕処理スイッチ
+ENABLE_PROCESS_BOT         = True     # ボット返信スイッチ
+ENABLE_PROCESS_MENTION     = True     # メンション処理スイッチ
+ENABLE_PROCESS_PREFIX      = True     # プレフィックス処理スイッチ
+ENABLE_PROCESS_IMAGE       = True     # 画像処理スイッチ
+ENABLE_PROCESS_URL         = False    # URL処理スイッチ
+ENABLE_PROCESS_MARKDOWN    = False    # Markdown処理スイッチ
+ENABLE_PROCESS_YOUTUBE     = False    # Youtube字幕処理スイッチ
+ENABLE_SLASH_TRANSLATE     = True     # スラッシュ翻訳コマンドスイッチ
+ENABLE_SLASH_SAY           = False    # スラッシュSayコマンドスイッチ
 ENABLE_PAYLOAD_LOGGING     = False    # ペイロードログスイッチ
 
 # プレフィックス設定
-PREFIX_TALK     = '.ta '   # トークモードプレフィックス
-PREFIX_STORY    = '.st '   # ストーリーモードプレフィックス
-PREFIX_TRANS    = '.tr '   # 翻訳モードプレフィックス
-PREFIX_ASSIS    = '.as '   # アシスタントモードプレフィックス
-PREFIX_IGNORE   = ','      # 無視プレフィックス
+PREFIX_TALK      = '.ta '         # トークモードプレフィックス
+PREFIX_STORY     = '.st '         # ストーリーモードプレフィックス
+PREFIX_ASSIS     = '.as '         # アシスタントモードプレフィックス
+PREFIX_TRANS     = '.tr '         # 翻訳モードプレフィックス
+PREFIX_MARKDOWN  = '.markdown'    # Markdownモードプレフィックス
+PREFIX_IGNORE    = ','            # 無視プレフィックス
 
 # 入力文字数制限
 PROMPT_LENGTH_LIMIT      = int(MAX_TOKENS * 0.50)
@@ -78,12 +82,12 @@ MARKDOWN_LENGTH_LIMIT    = int(MAX_TOKENS * 0.50)
 
 # 出力文字数上限期待値
 OUTPUT_LENGTH_TALK     = int(MAX_TOKENS * 0.03)
-OUTPUT_LENGTH_STORY    = int(MAX_TOKENS * 0.08)
-OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
+OUTPUT_LENGTH_STORY    = int(MAX_TOKENS * 0.10)
 OUTPUT_LENGTH_ASSIS    = int(MAX_TOKENS * 0.10)
+OUTPUT_LENGTH_TRANS    = int(MAX_TOKENS * 0.50)
 
 # 基本情報
-BOT_VERSION    = 'v1.15.9-202606B10'
+BOT_VERSION    = 'v1.16.14-202608B01'
 AUTHOR_NAME    = 'Hinata983'
 GITHUB_URL     = 'https://github.com/Hinata983/Madoka'
 
@@ -138,15 +142,6 @@ SYSTEM_PROMPT_STORY = f"""出力文字数上限：{OUTPUT_LENGTH_STORY}
 性描写が求められる場合は回避のための非日常的な乱入事件を作成
 """
 
-# システムプロンプト設定（翻訳モード）
-SYSTEM_PROMPT_TRANS = f"""出力文字数上限：{OUTPUT_LENGTH_TRANS}
-システム設定 (System)
-言語：ユーザーのプロンプトに順応
-機能：翻訳
-ユーザープロンプトの最初に指定された .ja のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要
-性描写が求められる場合は猫の鳴き声だけで返信
-"""
-
 # システムプロンプト設定（アシスタントモード）
 SYSTEM_PROMPT_ASSIS = f"""出力文字数上限：{OUTPUT_LENGTH_ASSIS}
 システム設定 (System)
@@ -159,19 +154,29 @@ SYSTEM_PROMPT_ASSIS = f"""出力文字数上限：{OUTPUT_LENGTH_ASSIS}
 性描写が求められる場合は旧約聖書の箴言だけで返信
 """
 
+# システムプロンプト設定（翻訳モード）
+SYSTEM_PROMPT_TRANS = f"""出力文字数上限：{OUTPUT_LENGTH_TRANS}
+システム設定 (System)
+言語：ユーザーのプロンプトに順応
+機能：翻訳
+ユーザープロンプトの最初に指定された .ja のような言語コードを認識、メッセージをその言語に翻訳、翻訳結果のみ出力、説明や補足は不要、評論や検証も不要
+翻訳以外のリクエストは全て拒否
+性描写が求められる場合は猫の鳴き声だけで返信
+"""
+
 # デバッグ情報
 DEBUG_INFORMATION = f"""About Madoka
 Version: {BOT_VERSION}
 
 Primary Model (Talk): {PRIMARY_MODEL_TALK}
 Primary Model (Story): {PRIMARY_MODEL_STORY}
-Primary Model (Trans): {PRIMARY_MODEL_TRANS}
 Primary Model (Assis): {PRIMARY_MODEL_ASSIS}
+Primary Model (Trans): {PRIMARY_MODEL_TRANS}
 
 Secondary Model (Talk): {SECONDARY_MODEL_TALK}
 Secondary Model (Story): {SECONDARY_MODEL_STORY}
-Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
 Secondary Model (Assis): {SECONDARY_MODEL_ASSIS}
+Secondary Model (Trans): {SECONDARY_MODEL_TRANS}
 
 Max Tokens: {MAX_TOKENS}
 Prompt Length Limit: {PROMPT_LENGTH_LIMIT}
@@ -179,20 +184,21 @@ History Length Limit: {HISTORY_LENGTH_LIMIT}
 Markdown Length Limit: {MARKDOWN_LENGTH_LIMIT}
 
 Cooldown: {COOLDOWN_SECONDS}
-Max Requests: {MAX_REQUESTS_PER_2H}
+Max Requests: {MAX_REQUESTS}
+Request Window: {REQUEST_WINDOW_SECONDS}
 
 History Limit (Talk): {HISTORY_LIMIT_TALK}
 History Limit (Story): {HISTORY_LIMIT_STORY}
-History Limit (Trans): {HISTORY_LIMIT_TRANS}
 History Limit (Assis): {HISTORY_LIMIT_ASSIS}
+History Limit (Trans): {HISTORY_LIMIT_TRANS}
 Output Length (Talk): {OUTPUT_LENGTH_TALK}
 Output Length (Story): {OUTPUT_LENGTH_STORY}
-Output Length (Trans): {OUTPUT_LENGTH_TRANS}
 Output Length (Assis): {OUTPUT_LENGTH_ASSIS}
+Output Length (Trans): {OUTPUT_LENGTH_TRANS}
 Temperature (Talk): {TEMPERATURE_TALK}
 Temperature (Story): {TEMPERATURE_STORY}
-Temperature (Trans): {TEMPERATURE_TRANS}
 Temperature (Assis): {TEMPERATURE_ASSIS}
+Temperature (Trans): {TEMPERATURE_TRANS}
 
 Max Image Size: {MAX_IMAGE_SIZE}
 Max Markdown Size: {MAX_MARKDOWN_SIZE}
@@ -202,19 +208,23 @@ Markdown Timeout: {MARKDOWN_TIMEOUT}
 
 Max Messages: {MAX_MESSAGES}
 
-Enable Mention Process: {ENABLE_MENTION_PROCESS}
-Enable Prefix Process: {ENABLE_PREFIX_PROCESS}
-Enable Image Process: {ENABLE_IMAGE_PROCESS}
-Enable URL Process: {ENABLE_URL_PROCESS}
-Enable Markdown Process: {ENABLE_MARKDOWN_PROCESS}
-Enable Youtube Process: {ENABLE_YOUTUBE_PROCESS}
+Enable Process Mention: {ENABLE_PROCESS_MENTION}
+Enable Process Prefix: {ENABLE_PROCESS_PREFIX}
+Enable Process Image: {ENABLE_PROCESS_IMAGE}
+Enable Process URL: {ENABLE_PROCESS_URL}
+Enable Process Markdown: {ENABLE_PROCESS_MARKDOWN}
+Enable Process Youtube: {ENABLE_PROCESS_YOUTUBE}
+
+Enable Slash Translate: {ENABLE_SLASH_TRANSLATE}
+Enable Slash Say: {ENABLE_SLASH_SAY}
 
 Enable Payload Logging: {ENABLE_PAYLOAD_LOGGING}
 
 Prefix Talk: '{PREFIX_TALK}'
 Prefix Story: '{PREFIX_STORY}'
-Prefix Trans: '{PREFIX_TRANS}'
 Prefix Assis: '{PREFIX_ASSIS}'
+Prefix Trans: '{PREFIX_TRANS}'
+Prefix Markdown: '{PREFIX_MARKDOWN}'
 Prefix Ignore: '{PREFIX_IGNORE}'
 
 By {AUTHOR_NAME}
@@ -234,12 +244,12 @@ HELP_INFORMATION = f"""Madokaについて
 {PREFIX_STORY}[テキスト]
 ストーリーモードに入ります。
 
+{PREFIX_ASSIS}[テキスト]
+アシスタントモードに入ります。
+
 {PREFIX_TRANS}[言語コード] [テキスト]
 翻訳モードに入ります。
 https://ja.wikipedia.org/wiki/ISO_639-1%E3%82%B3%E3%83%BC%E3%83%89%E4%B8%80%E8%A6%A7
-
-{PREFIX_ASSIS}[テキスト]
-アシスタントモードに入ります。
 
 {PREFIX_IGNORE} [テキスト]
 先頭にカンマを入ると、ボットはこのメッセージを無視します。
@@ -265,12 +275,12 @@ Enters Talk Mode.
 {PREFIX_STORY}[text]
 Enters Story Mode.
 
+{PREFIX_ASSIS}[text]
+Enters Assistant Mode.
+
 {PREFIX_TRANS}[lang code] [text]
 Enters Translation Mode.
 https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes
-
-{PREFIX_ASSIS}[text]
-Enters Assistant Mode.
 
 {PREFIX_IGNORE} [text]
 If a comma is placed at the beginning, the bot will ignore this message.
@@ -296,12 +306,12 @@ Active le mode Discussion.
 {PREFIX_STORY}[texte]
 Active le mode Histoire.
 
+{PREFIX_ASSIS}[texte]
+Active le mode Assistant.
+
 {PREFIX_TRANS}[code langue] [texte]
 Active le mode Traduction.
 https://fr.wikipedia.org/wiki/Liste_des_codes_ISO_639-1
-
-{PREFIX_ASSIS}[texte]
-Active le mode Assistant.
 
 {PREFIX_IGNORE} [texte]
 Si une virgule est placée au début, le bot ignorera ce message.
@@ -327,12 +337,12 @@ Wechselt in den Talk-Modus.
 {PREFIX_STORY}[Text]
 Wechselt in den Story-Modus.
 
+{PREFIX_ASSIS}[Text]
+Wechselt in den Assistenten-Modus.
+
 {PREFIX_TRANS}[Sprachcode] [Text]
 Wechselt in den Übersetzungsmodus.
 https://de.wikipedia.org/wiki/Liste_der_ISO-639-Sprachcodes
-
-{PREFIX_ASSIS}[Text]
-Wechselt in den Assistenten-Modus.
 
 {PREFIX_IGNORE} [Text]
 Wenn am Anfang ein Komma steht, ignoriert der Bot diese Nachricht.
@@ -358,12 +368,12 @@ HELP_INFORMATION_KO = f"""Madoka에 대하여
 {PREFIX_STORY}[텍스트]
 스토리 모드로 전환합니다.
 
+{PREFIX_ASSIS}[텍스트]
+어시스턴트 모드로 전환합니다.
+
 {PREFIX_TRANS}[언어 코드] [텍스트]
 번역 모드로 전환합니다.
 https://ko.wikipedia.org/wiki/ISO_639-1_%EC%BD%94%EB%93%9C_%EB%AA%A9%EB%A1%9D
-
-{PREFIX_ASSIS}[텍스트]
-어시스턴트 모드로 전환합니다.
 
 {PREFIX_IGNORE} [텍스트]
 시작 부분에 쉼표가 있으면 봇이 이 메시지를 무시합니다.
@@ -389,12 +399,12 @@ HELP_INFORMATION_ZH = f"""關於 Madoka
 {PREFIX_STORY}[文本]
 進入故事模式。
 
+{PREFIX_ASSIS}[文本]
+進入助手模式。
+
 {PREFIX_TRANS}[語言代碼] [文本]
 進入翻譯模式。
 https://zh.wikipedia.org/zh-tw/ISO_639-1%E4%BB%A3%E7%A0%81%E5%88%97%E8%A1%A8
-
-{PREFIX_ASSIS}[文本]
-進入助手模式。
 
 {PREFIX_IGNORE} [文本]
 如果在開頭放置逗號，機器人將忽略此訊息。
@@ -431,64 +441,44 @@ db_conn = None
 period_request_count = 0
 period_token_count = 0
 
-# DB初期化
-async def init_db():
-    global db_conn
-    db_conn = await aiosqlite.connect(DB_PATH)
-    await db_conn.execute("PRAGMA journal_mode = WAL;")
-    await db_conn.execute("PRAGMA foreign_keys = ON;")
-    await db_conn.execute("PRAGMA synchronous = NORMAL;")
-    
-    await db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS global_stats (
+# データベーススキーマ定義
+SCHEMA_TABLES = {
+    "global_stats": """CREATE TABLE global_stats (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             total_request_count INTEGER NOT NULL DEFAULT 0,
             total_token_count INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    await db_conn.execute("""
-        INSERT OR IGNORE INTO global_stats (id, total_request_count, total_token_count)
-        VALUES (1, 0, 0)
-    """)
-    
-    await db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+        )""",
+    "users": """CREATE TABLE users (
             user_id INTEGER PRIMARY KEY,
             user_name TEXT,
             last_request_time REAL NOT NULL DEFAULT 0,
             window_start_time REAL NOT NULL DEFAULT 0,
             request_count INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    
-    await db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS guilds (
+        )""",
+    "guilds": """CREATE TABLE guilds (
             guild_id INTEGER PRIMARY KEY,
             guild_name TEXT
-        )
-    """)
-    
-    await db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS channels (
+        )""",
+    "channels": """CREATE TABLE channels (
             channel_id INTEGER PRIMARY KEY,
             channel_name TEXT,
             guild_id INTEGER REFERENCES guilds(guild_id) ON DELETE CASCADE
-        )
-    """)
-    await db_conn.execute("CREATE INDEX IF NOT EXISTS idx_channels_guild ON channels(guild_id)")
-    
-    await db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS message_logs (
+        )""",
+    "message_logs": """CREATE TABLE message_logs (
             message_id INTEGER PRIMARY KEY,
             created_at REAL NOT NULL,
             token_count INTEGER NOT NULL DEFAULT 0,
-            mode TEXT NOT NULL CHECK (mode IN ('TALK','STORY','TRANSLATE','ASSISTANT','MARKDOWN'))
-        )
-    """)
-    await db_conn.execute("CREATE INDEX IF NOT EXISTS idx_message_logs_created ON message_logs(created_at)")
-    
-    await db_conn.execute("""
-        CREATE TRIGGER IF NOT EXISTS trg_message_logs_limit
+            mode TEXT NOT NULL CHECK (mode IN ('TALK','STORY','ASSISTANT','TRANSLATE','MARKDOWN','SAY'))
+        )""",
+}
+
+SCHEMA_INDEXES = {
+    "idx_channels_guild": "CREATE INDEX idx_channels_guild ON channels(guild_id)",
+    "idx_message_logs_created": "CREATE INDEX idx_message_logs_created ON message_logs(created_at)",
+}
+
+SCHEMA_TRIGGERS = {
+    "trg_message_logs_limit": """CREATE TRIGGER trg_message_logs_limit
         AFTER INSERT ON message_logs
         BEGIN
             DELETE FROM message_logs
@@ -497,67 +487,231 @@ async def init_db():
                 ORDER BY created_at ASC, message_id ASC
                 LIMIT MAX((SELECT COUNT(*) FROM message_logs) - 10000, 0)
             );
-        END;
+        END""",
+}
+
+# SQL正規化
+def normalize_sql(sql):
+    if not sql:
+        return ""
+    sql = re.sub(r'\bIF\s+NOT\s+EXISTS\b', '', sql, flags=re.IGNORECASE)
+    sql = re.sub(r'\s+', ' ', sql).strip()
+    return sql
+
+# 現在のスキーマ取得
+async def get_current_schema():
+    schema = {"table": {}, "index": {}, "trigger": {}}
+    async with db_conn.execute(
+        "SELECT type, name, sql FROM sqlite_master WHERE type IN ('table','index','trigger')"
+    ) as cursor:
+        rows = await cursor.fetchall()
+    for type_, name, sql in rows:
+        if name.startswith('sqlite_'):
+            continue
+        schema[type_][name] = sql
+    return schema
+
+# スキーマ差分判定
+async def schema_matches():
+    current = await get_current_schema()
+    expected = {
+        "table": SCHEMA_TABLES,
+        "index": SCHEMA_INDEXES,
+        "trigger": SCHEMA_TRIGGERS,
+    }
+    for type_, defs in expected.items():
+        cur = current[type_]
+        if set(cur.keys()) != set(defs.keys()):
+            return False
+        for name, ddl in defs.items():
+            if normalize_sql(cur.get(name)) != normalize_sql(ddl):
+                return False
+    return True
+
+# テーブル再構築
+async def migrate_schema():
+    await db_conn.commit()
+    await db_conn.execute("PRAGMA foreign_keys = OFF;")
+    try:
+        current = await get_current_schema()
+
+        for name in current["trigger"]:
+            await db_conn.execute(f'DROP TRIGGER IF EXISTS "{name}"')
+        for name in current["index"]:
+            await db_conn.execute(f'DROP INDEX IF EXISTS "{name}"')
+
+        for name in current["table"]:
+            if name not in SCHEMA_TABLES:
+                await db_conn.execute(f'DROP TABLE IF EXISTS "{name}"')
+
+        for name, ddl in SCHEMA_TABLES.items():
+            exists = name in current["table"]
+            old_cols = []
+            if exists:
+                async with db_conn.execute(f'PRAGMA table_info("{name}")') as c:
+                    old_cols = [r[1] for r in await c.fetchall()]
+                await db_conn.execute(f'ALTER TABLE "{name}" RENAME TO "_old_{name}"')
+
+            await db_conn.execute(ddl)
+
+            if exists:
+                async with db_conn.execute(f'PRAGMA table_info("{name}")') as c:
+                    new_cols = [r[1] for r in await c.fetchall()]
+                common = [col for col in new_cols if col in old_cols]
+                if common:
+                    cols_csv = ", ".join(f'"{col}"' for col in common)
+                    await db_conn.execute(
+                        f'INSERT OR IGNORE INTO "{name}" ({cols_csv}) '
+                        f'SELECT {cols_csv} FROM "_old_{name}"'
+                    )
+                await db_conn.execute(f'DROP TABLE IF EXISTS "_old_{name}"')
+
+        for ddl in SCHEMA_INDEXES.values():
+            await db_conn.execute(ddl)
+        for ddl in SCHEMA_TRIGGERS.values():
+            await db_conn.execute(ddl)
+
+        await db_conn.commit()
+    except Exception:
+        await db_conn.rollback()
+        raise
+    finally:
+        await db_conn.execute("PRAGMA foreign_keys = ON;")
+
+# DB初期化
+async def init_db():
+    global db_conn
+    db_conn = await aiosqlite.connect(DB_PATH)
+    await db_conn.execute("PRAGMA journal_mode = WAL;")
+    await db_conn.execute("PRAGMA busy_timeout = 5000;")
+    await db_conn.execute("PRAGMA foreign_keys = ON;")
+    await db_conn.execute("PRAGMA synchronous = NORMAL;")
+
+    # スキーマ確認
+    if await schema_matches():
+        logger.info("データベース更新なし")
+    else:
+        logger.info("データベース更新開始")
+        await migrate_schema()
+        logger.info("データベース更新完了")
+
+    await db_conn.execute("""
+        INSERT OR IGNORE INTO global_stats (id, total_request_count, total_token_count)
+        VALUES (1, 0, 0)
     """)
     await db_conn.commit()
 
-# クールダウンと回数制限判定と加算
-async def check_and_count(user_id, user_name):
-    global period_request_count
+# 権限検証
+def has_required_permissions(channel):
+    guild = getattr(channel, 'guild', None)
+    if guild is None:
+        return True
+
+    me = guild.me
+    if me is None:
+        return False
+
+    perms = channel.permissions_for(me)
+
+    if isinstance(channel, discord.Thread):
+        can_send = perms.send_messages_in_threads
+    else:
+        can_send = perms.send_messages
+
+    return (
+        perms.view_channel and            # チャンネル表示
+        perms.read_message_history and    # メッセージ履歴を読む
+        perms.manage_messages and         # メッセージ管理
+        can_send and                      # メッセージを送る
+        perms.embed_links and             # リンク埋め込み
+        perms.attach_files                # ファイル添付
+    )
+
+# クールダウン判定
+async def check_cooldown(user_id, user_name):
     current_time = time.time()
-    
+
     async with db_conn.execute("BEGIN IMMEDIATE"):
         try:
-            async with db_conn.execute("SELECT last_request_time, window_start_time, request_count FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            async with db_conn.execute("SELECT last_request_time FROM users WHERE user_id = ?", (user_id,)) as cursor:
                 row = await cursor.fetchone()
-            
+
             if row is None:
                 last_request_time = 0
-                window_start_time = current_time
-                request_count = 0
             else:
-                last_request_time, window_start_time, request_count = row
-                
+                last_request_time = row[0]
+
             # クールダウン判定
             time_passed = current_time - last_request_time
             if time_passed < COOLDOWN_SECONDS:
                 await db_conn.execute("ROLLBACK")
                 return "COOLDOWN", int(COOLDOWN_SECONDS - time_passed)
-                
-            # ウィンドウ判定
-            if current_time - window_start_time >= 7200:
-                window_start_time = current_time
-                request_count = 0
-                
-            # 回数制限判定
-            if request_count >= MAX_REQUESTS_PER_2H:
-                await db_conn.execute("ROLLBACK")
-                return "LIMIT", None
-                
-            # 加算処理
-            request_count += 1
-            
-            # ユーザー更新
+
+            # last_request_time更新
             await db_conn.execute("""
-                INSERT INTO users (user_id, user_name, last_request_time, window_start_time, request_count)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (user_id, user_name, last_request_time)
+                VALUES (?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     user_name = excluded.user_name,
-                    last_request_time = excluded.last_request_time,
+                    last_request_time = excluded.last_request_time
+            """, (user_id, user_name, current_time))
+
+            await db_conn.execute("COMMIT")
+            return "OK", None
+        except Exception as e:
+            await db_conn.execute("ROLLBACK")
+            logger.error(f"DB check_cooldown error: {e}")
+            return "ERROR", None
+
+# 回数制限判定と加算
+async def check_limit_and_count(user_id, user_name):
+    global period_request_count
+    current_time = time.time()
+
+    async with db_conn.execute("BEGIN IMMEDIATE"):
+        try:
+            async with db_conn.execute("SELECT window_start_time, request_count FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+
+            if row is None:
+                window_start_time = current_time
+                request_count = 0
+            else:
+                window_start_time, request_count = row
+
+            # ウィンドウ判定
+            if current_time - window_start_time >= REQUEST_WINDOW_SECONDS:
+                window_start_time = current_time
+                request_count = 0
+
+            # 回数制限判定
+            if request_count >= MAX_REQUESTS:
+                await db_conn.execute("ROLLBACK")
+                return "LIMIT", None
+
+            # 加算処理
+            request_count += 1
+
+            # ユーザー更新
+            await db_conn.execute("""
+                INSERT INTO users (user_id, user_name, window_start_time, request_count)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    user_name = excluded.user_name,
                     window_start_time = excluded.window_start_time,
                     request_count = excluded.request_count
-            """, (user_id, user_name, current_time, window_start_time, request_count))
-            
+            """, (user_id, user_name, window_start_time, request_count))
+
             # 全体統計更新
             await db_conn.execute("UPDATE global_stats SET total_request_count = total_request_count + 1 WHERE id = 1")
-            
+
             await db_conn.execute("COMMIT")
-            
+
             period_request_count += 1
             return "OK", None
         except Exception as e:
             await db_conn.execute("ROLLBACK")
-            logger.error(f"DB check_and_count error: {e}")
+            logger.error(f"DB check_limit_and_count error: {e}")
             return "ERROR", None
 
 # トークン加算
@@ -621,37 +775,94 @@ async def help_command(interaction: discord.Interaction):
     else:
         await interaction.response.send_message(HELP_INFORMATION_EN, ephemeral=True, suppress_embeds=True)
 
-# スラッシュ翻訳モード
-@tree.command(name="translate", description="テキストを指定の言語に翻訳します")
-@app_commands.describe(lang="翻訳先の言語 (例: ja, en)", text="翻訳するテキスト")
-async def translate_command(interaction: discord.Interaction, lang: str, text: str):
+# スラッシュSayコマンド
+@tree.command(name="say", description="テキストをMadokaが代わって送信させます")
+@app_commands.describe(text="送信するテキスト")
+async def say_command(interaction: discord.Interaction, text: app_commands.Range[str, 1, 2000]):
+    if not ENABLE_SLASH_SAY:
+        await interaction.response.send_message("このコマンドは現在無効化されています", ephemeral=True)
+        return
+    
     user_id = interaction.user.id
     user_name = interaction.user.display_name
 
-    # クールダウンと回数制限チェック
-    status, remaining_time = await check_and_count(user_id, user_name)
+    # 権限検証
+    if not has_required_permissions(interaction.channel):
+        await interaction.response.send_message("必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付", ephemeral=True)
+        return
+
+    # URL検証
+    if re.search(GENERAL_URL_PATTERN, text, re.IGNORECASE):
+        await interaction.response.send_message("URLを含むテキストは送信できません", ephemeral=True)
+        return
+
+    if ENABLE_PAYLOAD_LOGGING:
+        logger.info(f"User Message (Slash Say - {interaction.user.name} - {interaction.user.id}): {text}")
+
+    # クールダウンチェック
+    status, remaining_time = await check_cooldown(user_id, user_name)
     if status == "COOLDOWN":
         await interaction.response.send_message(f"クールダウン中 (残り {remaining_time} 秒)", ephemeral=True)
-        return
-    elif status == "LIMIT":
-        await interaction.response.send_message("リクエスト制限 (e201)", ephemeral=True)
         return
     elif status == "ERROR":
         await interaction.response.send_message("内部エラーが発生しました", ephemeral=True)
         return
 
-    await interaction.response.defer()
+    # ボットによるメッセージ送信
+    await interaction.response.send_message(text, allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
+    msg = await interaction.original_response()
+    await log_message(msg.id, msg.created_at.timestamp(), 0, "SAY")
 
+# スラッシュ翻訳コマンド
+@tree.command(name="translate", description="テキストを指定の言語に翻訳します")
+@app_commands.describe(lang="翻訳先の言語 (例: ja, en)", text="翻訳するテキスト")
+async def translate_command(interaction: discord.Interaction, lang: app_commands.Range[str, 1, 20], text: app_commands.Range[str, 1, 2000]):
+    if not ENABLE_SLASH_TRANSLATE:
+        await interaction.response.send_message("このコマンドは現在無効化されています", ephemeral=True)
+        return
+    
+    user_id = interaction.user.id
+    user_name = interaction.user.display_name
+    
+    # 権限検証
+    if not has_required_permissions(interaction.channel):
+        await interaction.response.send_message("必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付", ephemeral=True)
+        return
+    
+    if re.search(GENERAL_URL_PATTERN, lang, re.IGNORECASE) or re.search(GENERAL_URL_PATTERN, text, re.IGNORECASE):
+        await interaction.response.send_message("URLを含むテキストは翻訳できません", ephemeral=True)
+        return
+    
+    # クールダウンチェック
+    status, remaining_time = await check_cooldown(user_id, user_name)
+    if status == "COOLDOWN":
+        await interaction.response.send_message(f"クールダウン中 (残り {remaining_time} 秒)", ephemeral=True)
+        return
+    elif status == "ERROR":
+        await interaction.response.send_message("内部エラーが発生しました", ephemeral=True)
+        return
+    
+    # 回数制限チェックと加算
+    status, remaining_time = await check_limit_and_count(user_id, user_name)
+    if status == "LIMIT":
+        await interaction.response.send_message("リクエスト制限 (e201)", ephemeral=True)
+        return
+    elif status == "ERROR":
+        await interaction.response.send_message("内部エラーが発生しました", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
     # ペイロード構築
     prompt_with_lang = f".{lang} {text}"[:PROMPT_LENGTH_LIMIT]
     messages_payload = [
         {"role": "system", "content": SYSTEM_PROMPT_TRANS},
         {"role": "user", "content": prompt_with_lang}
     ]
-
+    
     if ENABLE_PAYLOAD_LOGGING:
-        logger.info(f"API Payload (Slash Translate): {messages_payload}")
-
+        logger.info(f"API Payload (Slash Translate - {interaction.user.name} - {interaction.user.id}): {messages_payload}")
+    
     try:
         try:
             response = await asyncio.wait_for(
@@ -683,15 +894,15 @@ async def translate_command(interaction: discord.Interaction, lang: str, text: s
         
         # 分割送信
         if len(reply_text) > 2000:
-            msg = await interaction.followup.send(reply_text[:2000], allowed_mentions=MENTION_RESTRICTION, wait=True)
+            msg = await interaction.followup.send(reply_text[:2000], allowed_mentions=MENTION_RESTRICTION, wait=True, suppress_embeds=True)
             await log_message(msg.id, msg.created_at.timestamp(), used_tokens, "TRANSLATE")
             for i in range(2000, len(reply_text), 2000):
-                msg = await interaction.followup.send(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION, wait=True)
+                msg = await interaction.followup.send(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION, wait=True, suppress_embeds=True)
                 await log_message(msg.id, msg.created_at.timestamp(), 0, "TRANSLATE")
         else:
-            msg = await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION, wait=True)
+            msg = await interaction.followup.send(reply_text, allowed_mentions=MENTION_RESTRICTION, wait=True, suppress_embeds=True)
             await log_message(msg.id, msg.created_at.timestamp(), used_tokens, "TRANSLATE")
-                
+        
     except Exception as e:
         logger.error(f"スラッシュコマンドエラー (e502) (sltr): {e}")
         await interaction.followup.send("リクエストエラー (e502)", ephemeral=True)
@@ -705,10 +916,18 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # ボット返信スイッチチェック
+    if not ENABLE_PROCESS_BOT:
+        return
+
+    # 権限検証
+    if not has_required_permissions(message.channel):
+        return
+
     # メンションとリプライ判定
     is_mentioned = False
     is_reply_to_bot = False
-    if ENABLE_MENTION_PROCESS:
+    if ENABLE_PROCESS_MENTION:
         is_mentioned = discord_client.user in message.mentions
         
         if message.reference and message.reference.message_id:
@@ -725,14 +944,10 @@ async def on_message(message):
 
     # プレフィックス判定
     is_prefix = False
-    if ENABLE_PREFIX_PROCESS:
-        is_prefix = message.content.startswith((PREFIX_TALK, PREFIX_STORY, PREFIX_TRANS, PREFIX_ASSIS))
+    if ENABLE_PROCESS_PREFIX:
+        is_prefix = message.content.startswith((PREFIX_TALK, PREFIX_STORY, PREFIX_ASSIS, PREFIX_TRANS, PREFIX_MARKDOWN))
 
     if not (is_mentioned or is_reply_to_bot or is_prefix):
-        return
-
-    # ボット返信スイッチチェック
-    if not ENABLE_BOT_PROCESS:
         return
 
     current_time = time.time()
@@ -909,7 +1124,7 @@ async def on_message(message):
 
     # 画像取得
     async def get_image_from_attachment(msg):
-        if not ENABLE_IMAGE_PROCESS:
+        if not ENABLE_PROCESS_IMAGE:
             return None
         for attachment in msg.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
@@ -919,7 +1134,7 @@ async def on_message(message):
 
     # 転送画像取得
     async def get_image_from_forward(msg):
-        if not ENABLE_IMAGE_PROCESS:
+        if not ENABLE_PROCESS_IMAGE:
             return None
         for snapshot in msg.message_snapshots:
             for attachment in snapshot.attachments:
@@ -930,7 +1145,7 @@ async def on_message(message):
 
     # 画像URL取得
     async def get_image_from_text(text):
-        if not ENABLE_URL_PROCESS or not ENABLE_IMAGE_PROCESS:
+        if not ENABLE_PROCESS_URL or not ENABLE_PROCESS_IMAGE:
             return None, text
 
         match = re.search(IMAGE_URL_PATTERN, text, re.IGNORECASE)
@@ -958,7 +1173,7 @@ async def on_message(message):
 
     # Markdown取得
     async def get_markdown_from_attachment(msg, text):
-        if not ENABLE_MARKDOWN_PROCESS:
+        if not ENABLE_PROCESS_MARKDOWN:
             return None, text
 
         for attachment in msg.attachments:
@@ -988,7 +1203,7 @@ async def on_message(message):
 
     # Markdown URL取得
     async def get_markdown_from_text(text):
-        if not ENABLE_URL_PROCESS or not ENABLE_MARKDOWN_PROCESS:
+        if not ENABLE_PROCESS_URL or not ENABLE_PROCESS_MARKDOWN:
             return None, text
 
         urls = re.findall(GENERAL_URL_PATTERN, text)
@@ -998,7 +1213,7 @@ async def on_message(message):
                 
             youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
             if youtube_match:
-                if not ENABLE_YOUTUBE_PROCESS:
+                if not ENABLE_PROCESS_YOUTUBE:
                     continue
                 video_id = youtube_match.group(1)
                 
@@ -1068,33 +1283,42 @@ async def on_message(message):
     prompt = prompt[:PROMPT_LENGTH_LIMIT]
     
     # プレフィックスによるモード判定
-    prefix_mode = None
+    current_mode = None
     if prompt.startswith(PREFIX_TALK):
-        prefix_mode = "TALK"
+        current_mode = "TALK"
         prompt = prompt[len(PREFIX_TALK):]
     elif prompt.startswith(PREFIX_STORY):
-        prefix_mode = "STORY"
+        current_mode = "STORY"
         prompt = prompt[len(PREFIX_STORY):]
-    elif prompt.startswith(PREFIX_TRANS):
-        prefix_mode = "TRANSLATE"
-        prompt = "." + prompt[len(PREFIX_TRANS):]
     elif prompt.startswith(PREFIX_ASSIS):
-        prefix_mode = "ASSISTANT"
+        current_mode = "ASSISTANT"
         prompt = prompt[len(PREFIX_ASSIS):]
+    elif prompt.startswith(PREFIX_TRANS):
+        current_mode = "TRANSLATE"
+        prompt = "." + prompt[len(PREFIX_TRANS):]
+    elif prompt.startswith(PREFIX_MARKDOWN):
+        current_mode = "MARKDOWN"
+        prompt = prompt[len(PREFIX_MARKDOWN):]
+    elif re.match(r'^\.\.debug', prompt):
+        current_mode = "DEBUG"
 
     # データベースによるモード継続
-    if prefix_mode is None and message.reference and message.reference.message_id:
-        try:
-            async with db_conn.execute("SELECT mode FROM message_logs WHERE message_id = ?", (message.reference.message_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    db_mode = row[0]
-                    if db_mode in ("TALK", "STORY", "ASSISTANT"):
-                        prefix_mode = db_mode
-                    elif db_mode == "TRANSLATE":
-                        return
-        except Exception as e:
-            logger.error(f"データベース モード継続 エラー: {e}")
+    if current_mode is None:
+        if message.reference and message.reference.message_id:
+            try:
+                async with db_conn.execute("SELECT mode FROM message_logs WHERE message_id = ?", (message.reference.message_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        db_mode = row[0]
+                        if db_mode in ("TALK", "STORY", "ASSISTANT"):
+                            current_mode = db_mode
+                        elif db_mode in ("TRANSLATE", "MARKDOWN", "SAY"):
+                            return
+            except Exception as e:
+                logger.error(f"データベースモード継続エラー: {e}")
+
+        if current_mode is None:
+            current_mode = "TALK"
 
     # 現在メッセージの画像取得
     target_image_url = await get_image_from_attachment(message)
@@ -1121,143 +1345,127 @@ async def on_message(message):
     
     # 空メッセージ判定
     if (not prompt or not any(c.isalnum() for c in prompt)) and not target_image_url:
-        await message.reply(HELP_INFORMATION, delete_after=20.0, allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
+        await message.channel.send(HELP_INFORMATION, reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0, allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
         return
-
-    # モード判定
-    current_mode = "TALK"
-    
-    if prefix_mode:
-        current_mode = prefix_mode
-    elif prompt:
-        if prompt.startswith(PREFIX_TALK):
-            current_mode = "TALK"
-        elif prompt.startswith(PREFIX_STORY):
-            current_mode = "STORY"
-        elif prompt.startswith(PREFIX_TRANS):
-            current_mode = "TRANSLATE"
-        elif prompt.startswith(PREFIX_ASSIS):
-            current_mode = "ASSISTANT"
-        elif re.match(r'^\.\.debug', prompt):
-            current_mode = "DEBUG"
-        elif re.match(r'^\.\.markdown', prompt):
-            current_mode = "MARKDOWN"
-    else:
-        current_mode = "TALK"
 
     # デバッグモード処理
     if current_mode == "DEBUG":
         if message.author.id != MASTER_USER_ID:
             return
-        await message.reply(DEBUG_INFORMATION, allowed_mentions=MENTION_RESTRICTION)
+        await message.channel.send(DEBUG_INFORMATION, reference=message.to_reference(fail_if_not_exists=False), allowed_mentions=MENTION_RESTRICTION)
         return
 
     # クールダウンと回数制限のチェックと加算
-    status, remaining_time = await check_and_count(user_id, message.author.display_name)
+    status, remaining_time = await check_cooldown(user_id, message.author.display_name)
     if status == "COOLDOWN":
-        await message.reply(f"クールダウン中 (残り {remaining_time} 秒)", delete_after=remaining_time)
-        return
-    elif status == "LIMIT":
-        await message.reply("リクエスト制限 (e201)", delete_after=20.0)
+        await message.channel.send(f"クールダウン中 (残り {remaining_time} 秒)", reference=message.to_reference(fail_if_not_exists=False), delete_after=remaining_time + 1)
         return
     elif status == "ERROR":
         return
 
-    # Markdownモード処理
-    if current_mode == "MARKDOWN":
-        target_url = None
-        youtube_video_id = None
-        
-        if ENABLE_MARKDOWN_PROCESS:
-            for attachment in message.attachments:
-                if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
-                    if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                        target_url = attachment.url
-                        break
-                    
-        if not target_url and ENABLE_URL_PROCESS:
-            urls = re.findall(GENERAL_URL_PATTERN, prompt)
-            for url in urls:
-                youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
-                if youtube_match:
-                    if not ENABLE_YOUTUBE_PROCESS:
-                        continue
-                    target_url = url
-                    youtube_video_id = youtube_match.group(1)
-                    break
+    status, remaining_time = await check_limit_and_count(user_id, message.author.display_name)
+    if status == "LIMIT":
+        await message.channel.send("リクエスト制限 (e201)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
+        return
+    elif status == "ERROR":
+        return
 
-                if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
-                    continue
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.head(url, timeout=5, allow_redirects=False) as resp:
-                            size_str = resp.headers.get('Content-Length')
-                            size = int(size_str) if size_str and size_str.isdigit() else 0
-                            if 0 < size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                                target_url = url
-                                break
-                except Exception:
-                    continue
-                        
-        if not target_url and message.reference and message.reference.message_id:
-            try:
-                ref_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-                if ENABLE_MARKDOWN_PROCESS:
-                    for attachment in ref_msg.attachments:
-                        if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
-                            if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                                target_url = attachment.url
-                                break
-                if not target_url and ENABLE_URL_PROCESS:
-                    ref_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
-                    urls = re.findall(GENERAL_URL_PATTERN, ref_content)
-                    for url in urls:
-                        youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
-                        if youtube_match:
-                            if not ENABLE_YOUTUBE_PROCESS:
-                                continue
-                            target_url = url
-                            youtube_video_id = youtube_match.group(1)
+    # リクエスト処理
+    async with message.channel.typing():
+        # Markdownモード処理
+        if current_mode == "MARKDOWN":
+            target_url = None
+            youtube_video_id = None
+            
+            if ENABLE_PROCESS_MARKDOWN:
+                for attachment in message.attachments:
+                    if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
+                        if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                            target_url = attachment.url
                             break
-
-                        if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                        
+            if not target_url and ENABLE_PROCESS_URL:
+                urls = re.findall(GENERAL_URL_PATTERN, prompt)
+                for url in urls:
+                    youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
+                    if youtube_match:
+                        if not ENABLE_PROCESS_YOUTUBE:
                             continue
-                        try:
-                            async with aiohttp.ClientSession() as session:
-                                async with session.head(url, timeout=5, allow_redirects=False) as resp:
-                                    size_str = resp.headers.get('Content-Length')
-                                    size = int(size_str) if size_str and size_str.isdigit() else 0
-                                    if 0 < size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
-                                        target_url = url
-                                        break
-                        except Exception:
-                            continue
-            except Exception:
-                pass
+                        target_url = url
+                        youtube_video_id = youtube_match.group(1)
+                        break
 
-        if target_url:
-            def extract_youtube_transcript(vid):
+                    if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                        continue
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.head(url, timeout=5, allow_redirects=False) as resp:
+                                size_str = resp.headers.get('Content-Length')
+                                size = int(size_str) if size_str and size_str.isdigit() else 0
+                                if 0 < size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                                    target_url = url
+                                    break
+                    except Exception:
+                        continue
+                            
+            if not target_url and message.reference and message.reference.message_id:
                 try:
-                    proxies = {"http": YOUTUBE_PROXY, "https": YOUTUBE_PROXY} if YOUTUBE_PROXY else None
-                    transcript_list = YouTubeTranscriptApi.list_transcripts(vid, proxies=proxies)
-                    transcript = next(iter(transcript_list))
-                    transcript_data = transcript.fetch()
-                    return " ".join([item['text'] for item in transcript_data])
-                except Exception as e:
-                    logger.info(f"YouTube字幕取得エラー (e311): {e}")
+                    ref_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+                    if ENABLE_PROCESS_MARKDOWN:
+                        for attachment in ref_msg.attachments:
+                            if any(attachment.filename.lower().endswith(ext) for ext in MARKDOWN_EXTENSIONS):
+                                if attachment.size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                                    target_url = attachment.url
+                                    break
+                    if not target_url and ENABLE_PROCESS_URL:
+                        ref_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
+                        urls = re.findall(GENERAL_URL_PATTERN, ref_content)
+                        for url in urls:
+                            youtube_match = re.search(YOUTUBE_URL_PATTERN, url)
+                            if youtube_match:
+                                if not ENABLE_PROCESS_YOUTUBE:
+                                    continue
+                                target_url = url
+                                youtube_video_id = youtube_match.group(1)
+                                break
+
+                            if not await is_valid_url(url) or re.search(IMAGE_URL_PATTERN, url, re.IGNORECASE):
+                                continue
+                            try:
+                                async with aiohttp.ClientSession() as session:
+                                    async with session.head(url, timeout=5, allow_redirects=False) as resp:
+                                        size_str = resp.headers.get('Content-Length')
+                                        size = int(size_str) if size_str and size_str.isdigit() else 0
+                                        if 0 < size <= MAX_MARKDOWN_SIZE * 1024 * 1024:
+                                            target_url = url
+                                            break
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+
+            if target_url:
+                def extract_youtube_transcript(vid):
+                    try:
+                        proxies = {"http": YOUTUBE_PROXY, "https": YOUTUBE_PROXY} if YOUTUBE_PROXY else None
+                        transcript_list = YouTubeTranscriptApi.list_transcripts(vid, proxies=proxies)
+                        transcript = next(iter(transcript_list))
+                        transcript_data = transcript.fetch()
+                        return " ".join([item['text'] for item in transcript_data])
+                    except Exception as e:
+                        logger.info(f"YouTube字幕取得エラー (e311): {e}")
+                        return None
+
+                def convert_full_markdown(url):
+                    try:
+                        md = MarkItDown()
+                        result = md.convert(url)
+                        if result and result.text_content:
+                            return result.text_content
+                    except Exception as e:
+                        logger.info(f"Markdown変換エラー (e307): {e}")
                     return None
 
-            def convert_full_markdown(url):
-                try:
-                    md = MarkItDown()
-                    result = md.convert(url)
-                    if result and result.text_content:
-                        return result.text_content
-                except Exception as e:
-                    logger.info(f"Markdown変換エラー (e307): {e}")
-                return None
-
-            async with message.channel.typing():
                 try:
                     if youtube_video_id:
                         md_text = await asyncio.wait_for(
@@ -1272,22 +1480,20 @@ async def on_message(message):
 
                     if md_text:
                         file = discord.File(io.BytesIO(md_text.encode('utf-8')), filename="markdown.md")
-                        reply_msg = await message.reply(file=file, allowed_mentions=MENTION_RESTRICTION)
+                        reply_msg = await message.channel.send(file=file, reference=message.to_reference(fail_if_not_exists=False), allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
                         await log_message(reply_msg.id, reply_msg.created_at.timestamp(), 0, "MARKDOWN")
                         return
                     else:
-                        await message.reply("Markdown変換できません (e308)", delete_after=20.0)
+                        await message.channel.send("Markdown変換できません (e308)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
                         return
                 except asyncio.TimeoutError:
                     logger.info(f"Markdown変換タイムアウト (e309): {target_url}")
-                    await message.reply("Markdown変換タイムアウト (e309)", delete_after=20.0)
+                    await message.channel.send("Markdown変換タイムアウト (e309)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
                     return
-        else:
-            await message.reply("Markdown変換対象が見つかりません (e310)", delete_after=20.0)
-            return
+            else:
+                await message.channel.send("Markdown変換対象が見つかりません (e310)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
+                return
 
-    # リクエスト処理
-    async with message.channel.typing():
         try:
             # トークモード
             if current_mode == "TALK":
@@ -1305,14 +1511,6 @@ async def on_message(message):
                 current_primary_model = PRIMARY_MODEL_STORY
                 current_secondary_model = SECONDARY_MODEL_STORY
                 
-            # 翻訳モード
-            elif current_mode == "TRANSLATE":
-                system_content = SYSTEM_PROMPT_TRANS
-                history_limit = HISTORY_LIMIT_TRANS
-                current_temperature = TEMPERATURE_TRANS
-                current_primary_model = PRIMARY_MODEL_TRANS
-                current_secondary_model = SECONDARY_MODEL_TRANS
-                
             # アシスタントモード
             elif current_mode == "ASSISTANT":
                 system_content = SYSTEM_PROMPT_ASSIS
@@ -1320,6 +1518,14 @@ async def on_message(message):
                 current_temperature = TEMPERATURE_ASSIS
                 current_primary_model = PRIMARY_MODEL_ASSIS
                 current_secondary_model = SECONDARY_MODEL_ASSIS
+
+            # 翻訳モード
+            elif current_mode == "TRANSLATE":
+                system_content = SYSTEM_PROMPT_TRANS
+                history_limit = HISTORY_LIMIT_TRANS
+                current_temperature = TEMPERATURE_TRANS
+                current_primary_model = PRIMARY_MODEL_TRANS
+                current_secondary_model = SECONDARY_MODEL_TRANS
 
             # ペイロード初期化
             messages_payload = [
@@ -1339,7 +1545,13 @@ async def on_message(message):
                     
                     role = "assistant" if ref_msg.author == discord_client.user else "user"
                     clean_content = ref_msg.content.replace(f'<@{discord_client.user.id}>', '').strip()
-                    
+
+                    if not clean_content and hasattr(ref_msg, 'message_snapshots') and ref_msg.message_snapshots:
+                        for snapshot in ref_msg.message_snapshots:
+                            if snapshot.content:
+                                clean_content = snapshot.content.strip()
+                                break
+
                     hist_attachment_url = None
                     if not attachment_found:
                         hist_attachment_url = await get_image_from_attachment(ref_msg)
@@ -1382,7 +1594,7 @@ async def on_message(message):
                     limit -= 1
                 except Exception as e:
                     logger.info(f"履歴取得エラー (e401): {e}")
-                  # await message.reply("履歴取得エラー (e401)", delete_after=20.0)
+                  # await message.channel.send("履歴取得エラー (e401)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
                     break
             
             # 履歴処理
@@ -1406,7 +1618,7 @@ async def on_message(message):
                 messages_payload.append({"role": "user", "content": content_list})
 
             if ENABLE_PAYLOAD_LOGGING:
-                logger.info(f"API Payload ({current_mode}): {messages_payload}")
+                logger.info(f"API Payload ({current_mode} - {message.author.name} - {message.author.id}): {messages_payload}")
 
             # リクエスト送信
             try:
@@ -1442,17 +1654,17 @@ async def on_message(message):
                 target_message = message
                 is_first = True
                 for i in range(0, len(reply_text), 2000):
-                    target_message = await target_message.reply(reply_text[i:i+2000], allowed_mentions=MENTION_RESTRICTION)
+                    target_message = await target_message.channel.send(reply_text[i:i+2000], reference=target_message.to_reference(fail_if_not_exists=False), allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
                     tokens_to_log = used_tokens if is_first else 0
                     await log_message(target_message.id, target_message.created_at.timestamp(), tokens_to_log, current_mode)
                     is_first = False
             else:
-                reply_msg = await message.reply(reply_text, allowed_mentions=MENTION_RESTRICTION)
+                reply_msg = await message.channel.send(reply_text, reference=message.to_reference(fail_if_not_exists=False), allowed_mentions=MENTION_RESTRICTION, suppress_embeds=True)
                 await log_message(reply_msg.id, reply_msg.created_at.timestamp(), used_tokens, current_mode)
                 
         except Exception as e:
             logger.error(f"リクエストエラー (e502): {e}")
-            await message.reply("リクエストエラー (e502)", delete_after=20.0)
+            await message.channel.send("リクエストエラー (e502)", reference=message.to_reference(fail_if_not_exists=False), delete_after=20.0)
 
 # 統計表示タスク
 async def print_stats_loop():
@@ -1473,54 +1685,114 @@ async def print_stats_loop():
 class CommandTranslator(app_commands.Translator):
     async def translate(self, string: app_commands.locale_str, locale: discord.Locale, context: app_commands.TranslationContext) -> str | None:
         if locale in (discord.Locale.american_english, discord.Locale.british_english):
-            if string.message == "Madokaのヘルプ情報を表示します":
-                return "Displays help information for Madoka"
-            elif string.message == "テキストを指定の言語に翻訳します":
-                return "Translate text into the specified language"
-            elif string.message == "翻訳先の言語 (例: ja, en)":
-                return "Target language (e.g., en, ja)"
-            elif string.message == "翻訳するテキスト":
-                return "Text to translate"
+            translations = {
+                # Help
+                "Madokaのヘルプ情報を表示します": "Displays help information for Madoka",
+
+                # Say
+                "テキストをMadokaが代わって送信させます": "Madoka will send the text on your behalf",
+                "送信するテキスト": "Text to send",
+                "URLを含むテキストは送信できません": "Texts containing URLs cannot be sent",
+
+                # Translate
+                "テキストを指定の言語に翻訳します": "Translate text into the specified language",
+                "翻訳先の言語 (例: ja, en)": "Target language (e.g., en, ja)",
+                "翻訳するテキスト": "Text to translate",
+                "URLを含むテキストは翻訳できません": "Texts containing URLs cannot be translated",
+
+                # Common
+                "必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付": "Required permissions are missing. Madoka will only work if all of the following permissions are granted: View Channel, Read Message History, Manage Messages, Send Messages, Embed Links, Attach Files.",
+                "このコマンドは現在無効化されています": "This command is currently disabled"
+            }
+            return translations.get(string.message)
 
         elif locale == discord.Locale.french:
-            if string.message == "Madokaのヘルプ情報を表示します":
-                return "Affiche les informations d'aide pour Madoka"
-            elif string.message == "テキストを指定の言語に翻訳します":
-                return "Traduit le texte dans la langue spécifiée"
-            elif string.message == "翻訳先の言語 (例: ja, en)":
-                return "Langue cible (ex: fr, ja)"
-            elif string.message == "翻訳するテキスト":
-                return "Texte à traduire"
+            translations = {
+                # Help
+                "Madokaのヘルプ情報を表示します": "Affiche les informations d'aide pour Madoka",
+
+                # Say
+                "テキストをMadokaが代わって送信させます": "Madoka enverra le texte à votre place",
+                "送信するテキスト": "Texte à envoyer",
+                "URLを含むテキストは送信できません": "Les textes contenant des URL ne peuvent pas être envoyés",
+
+                # Translate
+                "テキストを指定の言語に翻訳します": "Traduit le texte dans la langue spécifiée",
+                "翻訳先の言語 (例: ja, en)": "Langue cible (ex: fr, ja)",
+                "翻訳するテキスト": "Texte à traduire",
+                "URLを含むテキストは翻訳できません": "Les textes contenant des URL ne peuvent pas être traduits",
+
+                # Common
+                "必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付": "Autorisations requises manquantes. Madoka ne fonctionne que si toutes les permissions suivantes sont accordées : Voir les salons, Lire l'historique des messages, Gérer les messages, Envoyer des messages, Intégrer des liens, Joindre des fichiers.",
+                "このコマンドは現在無効化されています": "Cette commande est actuellement désactivée"
+            }
+            return translations.get(string.message)
 
         elif locale == discord.Locale.german:
-            if string.message == "Madokaのヘルプ情報を表示します":
-                return "Zeigt Hilfeinformationen für Madoka an"
-            elif string.message == "テキストを指定の言語に翻訳します":
-                return "Übersetzt Text in die angegebene Sprache"
-            elif string.message == "翻訳先の言語 (例: ja, en)":
-                return "Zielsprache (z.B. de, ja)"
-            elif string.message == "翻訳するテキスト":
-                return "Zu übersetzender Text"
+            translations = {
+                # Help
+                "Madokaのヘルプ情報を表示します": "Zeigt Hilfeinformationen für Madoka an",
+
+                # Say
+                "テキストをMadokaが代わって送信させます": "Madoka wird den Text stellvertretend senden",
+                "送信するテキスト": "Zu sendender Text",
+                "URLを含むテキストは送信できません": "Texte, die URLs enthalten, können nicht gesendet werden",
+
+                # Translate
+                "テキストを指定の言語に翻訳します": "Übersetzt Text in die angegebene Sprache",
+                "翻訳先の言語 (例: ja, en)": "Zielsprache (z.B. de, ja)",
+                "翻訳するテキスト": "Zu übersetzender Text",
+                "URLを含むテキストは翻訳できません": "Texte, die URLs enthalten, können nicht übersetzt werden",
+
+                # Common
+                "必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付": "Erforderliche Berechtigungen fehlen. Madoka funktioniert nur, wenn alle folgenden Berechtigungen vorhanden sind: Kanäle anzeigen, Nachrichtenverlauf lesen, Nachrichten verwalten, Nachrichten senden, Links einbetten, Dateien anhängen.",
+                "このコマンドは現在無効化されています": "Dieser Befehl ist derzeit deaktiviert"
+            }
+            return translations.get(string.message)
 
         elif locale == discord.Locale.korean:
-            if string.message == "Madokaのヘルプ情報を表示します":
-                return "Madoka의 도움말 정보를 표시합니다"
-            elif string.message == "テキストを指定の言語に翻訳します":
-                return "텍스트를 지정된 언어로 번역합니다"
-            elif string.message == "翻訳先の言語 (例: ja, en)":
-                return "번역할 언어 (예: ko, ja)"
-            elif string.message == "翻訳するテキスト":
-                return "번역할 텍스트"
+            translations = {
+                # Help
+                "Madokaのヘルプ情報を表示します": "Madoka의 도움말 정보를 표시합니다",
+
+                # Say
+                "テキストをMadokaが代わって送信させます": "텍스트를 Madoka가 대신 전송합니다",
+                "送信するテキスト": "전송할 텍스트",
+                "URLを含むテキストは送信できません": "URL이 포함된 텍스트는 전송할 수 없습니다",
+
+                # Translate
+                "テキストを指定の言語に翻訳します": "텍스트를 지정된 언어로 번역합니다",
+                "翻訳先の言語 (例: ja, en)": "번역할 언어 (예: ko, ja)",
+                "翻訳するテキスト": "번역할 텍스트",
+                "URLを含むテキストは翻訳できません": "URL을 포함한 텍스트는 번역할 수 없습니다",
+
+                # Common
+                "必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付": "필요한 권한이 부족합니다. Madoka는 다음과 같은 모든 권한이 있는 경우에만 작동합니다: 채널 보기, 메시지 기록 읽기, 메시지 관리, 메시지 보내기, 링크 첨부, 파일 첨부",
+                "このコマンドは現在無効化されています": "이 명령은 현재 비활성화되어 있습니다"
+            }
+            return translations.get(string.message)
 
         elif locale in (discord.Locale.taiwan_chinese, discord.Locale.chinese):
-            if string.message == "Madokaのヘルプ情報を表示します":
-                return "顯示 Madoka 的幫助資訊"
-            elif string.message == "テキストを指定の言語に翻訳します":
-                return "將文本翻譯成指定語言"
-            elif string.message == "翻訳先の言語 (例: ja, en)":
-                return "目標語言 (例: zht, ja)"
-            elif string.message == "翻訳するテキスト":
-                return "要翻譯的文本"
+            translations = {
+                # Help
+                "Madokaのヘルプ情報を表示します": "顯示 Madoka 的幫助資訊",
+
+                # Say
+                "テキストをMadokaが代わって送信させます": "由 Madoka 代為傳送文字",
+                "送信するテキスト": "要傳送的文字",
+                "URLを含むテキストは送信できません": "無法傳送含有網址的文字",
+
+                # Translate
+                "テキストを指定の言語に翻訳します": "將文本翻譯成指定語言",
+                "翻訳先の言語 (例: ja, en)": "目標語言 (例: zht, ja)",
+                "翻訳するテキスト": "要翻譯的文本",
+                "URLを含むテキストは翻訳できません": "無法翻譯包含網址的文字",
+
+                # Common
+                "必要な権限が不足しています。Madokaは以下のすべての権限がある場合のみ作動します：チャンネル表示、メッセージ履歴を読む、メッセージ管理、メッセージを送る、リンク埋め込み、ファイル添付": "缺少必要的權限。Madoka 僅在擁有以下所有權限時才能運作：檢視頻道、讀取訊息歷史記錄、管理訊息、傳送訊息、嵌入連結、附加檔案",
+                "このコマンドは現在無効化されています": "此指令目前已被停用"
+            }
+            return translations.get(string.message)
 
         return None
 
